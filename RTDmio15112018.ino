@@ -1,5 +1,5 @@
 /*Creato da Giuseppe Tamanini
- * 15/11/2018
+ * 21/11/2018
  * Licenza CC BY-NC-SA 3.0 IT
  */
 
@@ -9,13 +9,16 @@
 //CS   - pin 53
 
 #include <Wire.h>
-#include <Adafruit_SSD1306.h>
-#include <Adafruit_GFX.h>
+#include "SSD1306Ascii.h"
+#include "SSD1306AsciiWire.h"
 
-// OLED display TWI address
-#define OLED_ADDR   0x3C
+// 0X3C+SA0 - 0x3C or 0x3D
+#define I2C_ADDRESS 0x3C
 
-Adafruit_SSD1306 display(-1);
+// Define proper RST_PIN if required.
+#define RST_PIN -1
+
+SSD1306AsciiWire oled;
 
 int sensorPin[5] = {A0, A1, A2, A3, A4}; // pin analogico uscita RTD x 4 ingressi PT1000
 int selPinA[5] = {38, 40, 42, 44, 46};   // pin A di commutazione dei multiplexer
@@ -25,11 +28,18 @@ int selPinB[5] = {39, 41, 43, 45, 47};   // pin B di commutazione dei multiplexe
 // pin 42 e 43 terza scheda RTD per sonde S09 - S12
 // pin 44 e 45 quarta scheda RTD per sonde S13 - S16
 // pin 46 e 47 quinta scheda RTD per sonda S17 - S20
-int inputPin[4] = {2, 3, 4, 5}; // pin digitali in ingresso che leggono se le valvole di zona sono chiuse
-// pin 2 valvola P.int
-// pin 3 valvola P.T
-// pin 4 valvola P.1
-// pin 5 valvola P.2
+int inputPinI[4] = {2, 3, 4, 5}; // pin digitali in ingresso che leggono se le valvole di zona sono chiuse
+// pin 2 chiusura valvola P.int
+// pin 3 chiusura valvola P.T
+// pin 4 chiusura valvola P.1
+// pin 5 chiusura valvola P.2
+int inputPinO[4] = {6, 7, 8, 9}; // pin digitali in ingresso che leggono se le valvole di zona sono chiuse
+// pin 6 apertura valvola P.int
+// pin 7 apertura valvola P.T
+// pin 8 apertura valvola P.1
+// pin 9 apertura valvola P.2
+int inputPinIV3vie = 10; // pin 10 chiusura valvola 3 vie
+int inputPinOV3vie = 11; // pin 11 apertura valvola 3 vie
 boolean dataPinAB[2] [4] = {{1, 0, 0, 1}, {0, 1, 0, 1}}; // dati per la commutazione dei multiplexer
 // 10 seleziona l'ingresso 1 della scheda RTD
 // 01 seleziona l'ingresso 2 della scheda RTD
@@ -62,8 +72,8 @@ int Sonda[20]; // matrice sonde temperatura
 // Sonda 05 temperatura acqua pannelli solare termico interna puffer
 // Sonda 06 temperatura uscita valvola tre vie
 // Sonda 07 temperatura ritorno globale impianto a pavimento
-// Sonda 08 temperatura uscita boiler acqua calda sanitaria
-// Sonda 09 temperatura entrata boiler acqua calda sanitaria
+// Sonda 08 temperatura entrata scambiatore calore acqua calda sanitaria
+// Sonda 09 temperatura uscita scambiatore calore acqua calda sanitaria
 // Sonda 10 temperatura caldaia
 // Sonda 11 temperatura uscita caldaia
 // Sonda 12 temperatura ritorno caldaia
@@ -90,6 +100,7 @@ boolean Valvola3vie; // la valvola a 3 vie è in funzione?
 boolean Valv3vieinatt; // è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
 int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
 boolean pompaAS; // la pompa dello scambiatore dell'acqua sanitaria è in funzione?
+boolean erroreAS; // errore acqua calda sanitaria
 boolean pompaCA; // la pompa uscita caldaia è in funzione
 boolean rele07; // il rele07 che alimenta la pompa in uscita dalla valvola a 3vie è accesso?
 boolean lettemp; // ha già letto le temperature?
@@ -106,6 +117,7 @@ int TT_V3vie = 30000; // tempo in millisecondi di totale apertura/ciusura valvol
 int T_att_V3vie = 30000; // tempo in millisecondi (3 minuti) di attesa prima della rilettura della temperatura di uscita dalla valvola a 3 vie
 int BMTempV3vie = 4; // tolleranza Temperatura uscita valvola 3 vie
 int T_att_pc = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno della caldaia
+int T_att_as = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
 int BMTempAS = 2; // tolleranza Temperatura acqua sanitaria
 int Tempriltemp = 5000; // tempo in millisecondi di rilettura delle temperature
 int nc_VZ; // numero dei cicli di apertura/chiusura delle valvole di zona
@@ -114,6 +126,7 @@ int nc_V3vie; // numero dei cicli di apertura/chiusura delle valvola 3 vie
 const int TempPavMin = 6; // allarme di TempPav minima (soglia antigelo)
 const int TempPavMax = 50; // allarme di TempPav massima
 const int TempASMax = 55; // temperatura massima acqua sanitaria
+const int TempPaMin = 25; // temperatura minima Puffer alto
 
 static unsigned long myTime; // tempo di apertura/chiusura valvole pavimento
 static unsigned long myTime1; // tempo di attesa rilettura valvole pavimento
@@ -123,6 +136,7 @@ static unsigned long myTime4; // tempo di attesa rilettura S6 uscita valvola a 3
 static unsigned long myTime5; // tempo di attesa lettura S13 ritorno caldaia
 static unsigned long myTime6; // tempo di chiusura valvole pavimento disattivazione zone
 static unsigned long myTime7; // tempo di attesa della rilettura delle temperature
+static unsigned long myTime8; // tempo di attesa della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
 
 String inputString = ""; // Stringa in entrata sulla seriale
 bool stringComplete = false;  // la stringa è completata?
@@ -132,14 +146,20 @@ void setup() {
   analogReference(INTERNAL2V56);
   inputString.reserve(50);
   
-  // initialize and clear display
-  display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
-  display.clearDisplay();
-  display.display();
-  
+  Wire.begin();
+  Wire.setClock(400000L);
+
+  #if RST_PIN >= 0
+    oled.begin(&Adafruit128x64, I2C_ADDRESS, RST_PIN);
+  #else // RST_PIN >= 0
+    oled.begin(&Adafruit128x64, I2C_ADDRESS);
+  #endif // RST_PIN >= 0
+  oled.setFont(Callibri10);
+  oled.clear();
+    
   // declare the selPin as an OUTPUT:
   for (int i = 0; i < 5 ; i++) {
-    pinMode(inputPin[i], INPUT);
+    pinMode(inputPinI[i], INPUT);
     pinMode(selPinA[i], OUTPUT);
     pinMode(selPinB[i], OUTPUT);    
   }
@@ -184,7 +204,7 @@ void loop() {
   }
   TVZoff = true; // pone la variabile TVZoff a vero
   for (int i = 0; i < 4; i++) { // controlla se le valvole di zona sono chiuse 
-    VZoff[i] = digitalRead(inputPin[i]); // legge il pin digitale che rileva se la valvola di zona è chiusa
+    VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola di zona è chiusa
     if (VZoff[i] == false) { // nel caso una qualsiasi non lo sia
       TVZoff = false; // pone la variabile TVZoff a falso
       if (Pinatt[i]) {
@@ -195,9 +215,11 @@ void loop() {
     }
   }
   if (TVZoff) { // se tutte le valvole di zona sono chiuse
-    digitalWrite(relePin[7 - 1], HIGH); // spegne il relè 07 che comanda la pompa uscita valvola 3 vie
-    Serial.println("R7spento");
-    rele07 = false;
+    if (rele07) {
+      digitalWrite(relePin[7 - 1], HIGH); // spegne il relè 07 che comanda la pompa uscita valvola 3 vie
+      Serial.println("R7spento");
+      rele07 = false;
+    }
   }
   solaretermico();
   valvola3vie();
@@ -211,6 +233,13 @@ void pavimento(int i) {
   Serial.print(i + 13);
   Serial.print(":");
   Serial.println(Sonda[i + 12]);
+  oled.setCursor(0 + i * 32, 0);
+  oled.print("Z");
+  oled.print(i);
+  oled.print(":");
+  oled.print(Sonda[i + 12]);
+  oled.print("`");
+  VZoff[i] = digitalRead(inputPinO[i]); // legge il pin digitale che rileva se la valvola è aperta
   if (Zona[i] && VZoff[i] == false && erroreVZ[i] == false && Sonda[i + 12] < TempPav - BMTempPav / 2) { // se la zona è attiva e la temperatura di ritorno della zona è minore di quella impostata - banda morta
     if (Vzona[i] == false && Pinatt[i] == false) {
       myTime = millis(); // azzera il tempo di apertura della valvola
@@ -242,7 +271,7 @@ void pavimento(int i) {
       }
     }
   }
-  VZoff[i] = digitalRead(inputPin[i]);
+  VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola è chiusa
   if (Zona[i] && VZoff[i] == false && erroreVZ[i] == false && Sonda[i + 12] > TempPav + BMTempPav / 2) { // se la zona è attiva e la temperatura di ritorno della zona è maggiore di quella impostata + banda morta
     if (Vzona[i] == false && Pinatt[i] == false) {
       Serial.print("VZ");
@@ -253,7 +282,7 @@ void pavimento(int i) {
       digitalWrite(relePin[i + 9], LOW); // accende il relè che chiude la valvola di zona
       Vzona[i] = true; // la valvola della zona è in funzione
       Catt_VZ[i] = Catt_VZ[i] - 1; // decrementa il numero dei cicli di apertura/chiusura
-      if (Catt_VZ[i] == 0) {
+      if (Catt_VZ[i] <= 0) {
         erroreVZ[i] = true; // se ha superato i cicli previsti attiva l'errore
         Serial.print("Errore di chiusura valvola di zona: ");
         Serial.println(i);
@@ -275,7 +304,7 @@ void pavimento(int i) {
     }
   }
   if (Zona[i] == false && VZoff[i] == false && erroreVZ[i] == false) { // disattiva la zona
-    VZoff[i] = digitalRead(inputPin[i]);
+    VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola è chiusa
     if (Zinoff[i] == false && Catt_VZ[i] > 0) { // il ciclo di chiusura valvola è minore di 5 (deve fare 6 cicli)
       myTime6 = millis(); // azzera il tempo di chiusura della valvola
       Zinoff[i] = true; // la valvola della zona si sta chiudento
@@ -295,6 +324,18 @@ void pavimento(int i) {
 }
 
 void solaretermico() {
+  oled.setCursor(0, 2);
+  oled.print("R4:");
+  if (pompaST) oled.print("on ");
+  if (pompaST == false) oled.print("off");
+  oled.print(" S2:");
+  oled.print(Sonda[2 - 1]);
+  oled.print("` S3:");
+  oled.print(Sonda[3 - 1]);
+  oled.print("` S5:");
+  oled.print(Sonda[5 - 1]);
+  if (erroreST) oled.print(" E");
+  if (erroreST == false) oled.print("  ");
   if (pompaST == false && erroreST == false && Sonda[2 - 1] > Sonda[5 - 1]) {
     myTime2 = millis();
     digitalWrite(relePin[4 - 1], LOW);
@@ -302,6 +343,7 @@ void solaretermico() {
     pompaST = true;
   }
   if (pompaST && Sonda[3 - 1] < Sonda[2 - 1]*0.9 && millis() - myTime2 > T_att_st) {
+    // passato il tempo T_att_st se la temperatura di entrata al puffer basso è inferiore al 90% di quella dei pannelli viene segnalato un errore
     Serial.println("Errore solare termico");
     erroreST = true;
     Serial.println("R4spento");
@@ -366,13 +408,33 @@ void valvola3vie() {
 }
 
 void acquasanitaria() {
-  if (pompaAS == false && Sonda[9 - 1] < Sonda[8 - 1] + BMTempAS / 2 && Sonda[8 - 1] < TempASMax) {
-    // se la pompa acqua sanitaria non è in funzione e S09 < S08 - BM/2 e S08 < Temperatura massima acqua sanitaria (55°)
+  oled.setCursor(0, 3);
+  oled.print("R3:");
+  if (pompaAS) oled.print("on ");
+  if (pompaAS == false) oled.print("off");
+  oled.print(" S4:");
+  oled.print(Sonda[4 - 1]);
+  oled.print("` S8:");
+  oled.print(Sonda[8 - 1]);
+  oled.print("` S9:");
+  oled.print(Sonda[9 - 1]);
+  if (erroreAS) oled.print(" E");
+  if (erroreAS == false) oled.print("  ");
+  if (pompaAS == false && Sonda[4 - 1] > Sonda[9 - 1] && Sonda[4 - 1] > TempPaMin && Sonda[9 - 1] < TempASMax) {
+    // se la pompa acqua sanitaria non è in funzione e S4 maggiore S9 e S4 minore 25 e S8 minore TempASMax
     digitalWrite(relePin[3 - 1], LOW); // il relè 03 accende la pompaAS
     Serial.println("R3acceso");
     pompaAS = true; // pone vera pompaAs
   }
-  if (pompaAS && Sonda[8 - 1] == Sonda[9 - 1] - BMTempAS / 2) { // se la pompa è accesa e S08 uguale a S09 + BM/2
+  if (pompaAS && Sonda[9 - 1] < Sonda[9 - 1]*0.75 && millis() - myTime8 > T_att_as) {
+    // passato il tempo T_att_as se la temperatura di uscita dello scambiatore è inferiore al 75% di quella di entrata viene segnalato un errore
+    Serial.println("Errore pompa acqua sanitaria");
+    erroreAS = true;
+    Serial.println("R3spento");
+    digitalWrite(relePin[3 - 1], HIGH);
+    pompaAS = false;
+  }
+  if (pompaAS && Sonda[9 - 1] >= Sonda[8 - 1] + BMTempAS / 2) { // se la pompa è accesa e S08 uguale a S09 + BM/2
     Serial.println("R3spento");
     digitalWrite(relePin[3 - 1], HIGH); // il relè 03 spegne la pompaAS
     pompaAS = false; //pone falsa pompaAS
@@ -380,15 +442,15 @@ void acquasanitaria() {
 }
 
 void caldaia() {
-  if (pompaCA == false && Sonda[10 - 1] > Sonda[4 - 1]) {
-    // se la pompa caldaia non è in funzione e S10 > S04 (temperatura caldaia maggiiore della temperatura puffer alto)
+  if (pompaCA == false && Sonda[10 - 1] > Sonda[4 - 1] &&  Sonda[10 - 1] > 50) {
+    // se la pompa caldaia non è in funzione e S10 > S04 (temperatura caldaia maggiore della temperatura puffer alto e maggiore di 50°)
     myTime5 = millis();
     digitalWrite(relePin[2 - 1], LOW); // il relè 02 accende la pompa uscita caldaia
     Serial.println("R2acceso");
     pompaCA = true; // pone vera pompaCA
   }
-  if (pompaCA && Sonda[11 - 1] > 50 &&  Sonda[12 - 1] < 80 && millis() - myTime5 > T_att_pc) {
-    // se dopo T_att_pc ??????????
+  if (pompaCA && Sonda[11 - 1] < 55 &&  Sonda[12 - 1] < 50 && millis() - myTime5 > T_att_pc) {
+    // se dopo T_att_pc S11 < 55 e S12 < 50 ferma lapompa
     Serial.println("R2spento");
     digitalWrite(relePin[2 - 1], HIGH);
     pompaCA = false;
@@ -418,15 +480,12 @@ void leggitemperature() {
 
 void chiude_VZ() {
   // display a line of text
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(40,20);
-  display.print("Chiusura");
-  display.setCursor(15,30);
-  display.print("valvole di zona");
+  oled.setCursor(42,2);
+  oled.print("Chiusura");
+  oled.setCursor(27,3);
+  oled.print("valvole di zona");
 
   // update display with all of the above graphics
-  display.display();
   
   for (int i = 0; i < 4 ; i++) { // chiude le valvole di zona finché non sono rilevate tali 
     digitalWrite(relePin[i + 9], LOW);
@@ -434,8 +493,8 @@ void chiude_VZ() {
   TVZoff = false; // pone la variabile TVZoff a falso
   do {
     for (int i = 0; i < 4; i++) { // controlla se le valvole di zona sono chiuse 
-      delay(1000); // aspetta un secondo
-      VZoff[i] = digitalRead(inputPin[i]); // legge il pin digitale che rileva se la valvola di zona è chiusa
+      delay(500); // aspetta un secondo
+      VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola di zona è chiusa
       if (VZoff[i] == false) break; // nel caso una qualsiasi non lo sia esce dal ciclo for
       TVZoff = true; // se tutte le valvole risultano chiuse pone TVZoff a vero
     }
@@ -443,10 +502,11 @@ void chiude_VZ() {
   for (int i = 0; i < 4 ; i++) { // spegne i relè che chiudono le valvole di zona
     digitalWrite(relePin[i + 9], HIGH);
   }
-  display.clearDisplay();
-  display.setCursor(40,25);
-  display.print("Finito!");
-  display.display();
+  oled.clear();
+  oled.setCursor(45,3);
+  oled.print("Finito!");
+  delay(2000);
+  oled.clear();
 }
 
 void serialEvent() {
