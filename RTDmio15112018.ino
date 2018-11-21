@@ -1,5 +1,5 @@
 /*Creato da Giuseppe Tamanini
- * 21/11/2018
+ * 15/11/2018
  * Licenza CC BY-NC-SA 3.0 IT
  */
 
@@ -95,13 +95,14 @@ boolean VZoff[4]; // la valvola di zona è chiusa
 boolean erroreVZ[4]; // la valvola di zona non si è chiusa
 boolean TVZoff; // tutte le valvole di zona sono chiuse?
 boolean pompaST; // la pompa del solare termico è in funzione?
-boolean erroreST; // il solare termico è in errore
+boolean erroreST; // errore pompa solare termico
 boolean Valvola3vie; // la valvola a 3 vie è in funzione?
 boolean Valv3vieinatt; // è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
 int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
 boolean pompaAS; // la pompa dello scambiatore dell'acqua sanitaria è in funzione?
-boolean erroreAS; // errore acqua calda sanitaria
+boolean erroreAS; // errore pompa acqua calda sanitaria
 boolean pompaCA; // la pompa uscita caldaia è in funzione
+boolean erroreCA; // errore pompa caldaia
 boolean rele07; // il rele07 che alimenta la pompa in uscita dalla valvola a 3vie è accesso?
 boolean lettemp; // ha già letto le temperature?
 
@@ -118,6 +119,7 @@ int T_att_V3vie = 30000; // tempo in millisecondi (3 minuti) di attesa prima del
 int BMTempV3vie = 4; // tolleranza Temperatura uscita valvola 3 vie
 int T_att_pc = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno della caldaia
 int T_att_as = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
+int T_att_ca = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno S12 dal puffer alla caldaia
 int BMTempAS = 2; // tolleranza Temperatura acqua sanitaria
 int Tempriltemp = 5000; // tempo in millisecondi di rilettura delle temperature
 int nc_VZ; // numero dei cicli di apertura/chiusura delle valvole di zona
@@ -137,6 +139,7 @@ static unsigned long myTime5; // tempo di attesa lettura S13 ritorno caldaia
 static unsigned long myTime6; // tempo di chiusura valvole pavimento disattivazione zone
 static unsigned long myTime7; // tempo di attesa della rilettura delle temperature
 static unsigned long myTime8; // tempo di attesa della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
+static unsigned long myTime9; // tempo di attesa della temperatura di ritorno S12 dal puffer alla caldaia
 
 String inputString = ""; // Stringa in entrata sulla seriale
 bool stringComplete = false;  // la stringa è completata?
@@ -239,6 +242,10 @@ void pavimento(int i) {
   oled.print(":");
   oled.print(Sonda[i + 12]);
   oled.print("`");
+  oled.setCursor(0 + i * 32, 1);
+  if (Zona[i]) oled.print("on  ");
+  if (Zona[i] == false) oled.print("off ");
+  oled.print((int)((float)Catt_VZ[i] / (float)nc_VZ * 100));
   VZoff[i] = digitalRead(inputPinO[i]); // legge il pin digitale che rileva se la valvola è aperta
   if (Zona[i] && VZoff[i] == false && erroreVZ[i] == false && Sonda[i + 12] < TempPav - BMTempPav / 2) { // se la zona è attiva e la temperatura di ritorno della zona è minore di quella impostata - banda morta
     if (Vzona[i] == false && Pinatt[i] == false) {
@@ -442,12 +449,32 @@ void acquasanitaria() {
 }
 
 void caldaia() {
+  oled.setCursor(0, 4);
+  oled.print("R2:");
+  if (pompaCA) oled.print("on ");
+  if (pompaCA == false) oled.print("off");
+  oled.print(" S10:");
+  oled.print(Sonda[10 - 1]);
+  oled.print("` S11:");
+  oled.print(Sonda[11 - 1]);
+  oled.print("` S12:");
+  oled.print(Sonda[12 - 1]);
+  if (erroreCA) oled.print(" E");
+  if (erroreCA == false) oled.print("  ");
   if (pompaCA == false && Sonda[10 - 1] > Sonda[4 - 1] &&  Sonda[10 - 1] > 50) {
     // se la pompa caldaia non è in funzione e S10 > S04 (temperatura caldaia maggiore della temperatura puffer alto e maggiore di 50°)
     myTime5 = millis();
     digitalWrite(relePin[2 - 1], LOW); // il relè 02 accende la pompa uscita caldaia
     Serial.println("R2acceso");
     pompaCA = true; // pone vera pompaCA
+  }
+  if (pompaCA && Sonda[11 - 1] < Sonda[4 - 1]*0.9 && millis() - myTime9 > T_att_ca) {
+    // passato il tempo T_att_ca se la temperatura di uscita dalla pompa S11 è inferiore al 90% di quella di S4 (puffer alto) viene segnalato un errore
+    Serial.println("Errore pompa caldaia");
+    erroreCA = true;
+    Serial.println("R2spento");
+    digitalWrite(relePin[2 - 1], HIGH);
+    pompaCA = false;
   }
   if (pompaCA && Sonda[11 - 1] < 55 &&  Sonda[12 - 1] < 50 && millis() - myTime5 > T_att_pc) {
     // se dopo T_att_pc S11 < 55 e S12 < 50 ferma lapompa
