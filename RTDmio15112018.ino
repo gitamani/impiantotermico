@@ -1,5 +1,5 @@
 /*Creato da Giuseppe Tamanini
- * 21/11/2018
+ * 22/11/2018
  * Licenza CC BY-NC-SA 3.0 IT
  */
 
@@ -92,13 +92,16 @@ boolean Pinatt[4]; // è in attesa della rilettura della temperatura di ritorno 
 boolean Zinoff[4]; // è in chiusura della valvola di zona per la disattivazione della zona
 int Catt_VZ[4] = {0, 0, 0, 0}; // ciclo attuale della valvola di zona
 boolean VZoff[4]; // la valvola di zona è chiusa
-boolean erroreVZ[4]; // la valvola di zona non si è chiusa
+boolean erroreVZa[4]; // errore di apertura valvola di zona
+boolean erroreVZc[4]; // errore di chiusura valcola di zona
 boolean TVZoff; // tutte le valvole di zona sono chiuse?
 boolean pompaST; // la pompa del solare termico è in funzione?
 boolean erroreST; // errore pompa solare termico
 boolean Valvola3vie; // la valvola a 3 vie è in funzione?
 boolean Valv3vieinatt; // è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
 int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
+boolean erroreV3viea; // errore di apertura valvola 3 vie
+boolean erroreV3viec; // errore di chiusura valvola 3 vie
 boolean pompaAS; // la pompa dello scambiatore dell'acqua sanitaria è in funzione?
 boolean erroreAS; // errore pompa acqua calda sanitaria
 boolean pompaCA; // la pompa uscita caldaia è in funzione
@@ -247,7 +250,8 @@ void pavimento(int i) {
   if (Zona[i] == false) oled.print("off ");
   oled.print((int)((float)Catt_VZ[i] / (float)nc_VZ * 100));
   VZoff[i] = digitalRead(inputPinO[i]); // legge il pin digitale che rileva se la valvola è aperta
-  if (Zona[i] && VZoff[i] == false && erroreVZ[i] == false && Sonda[i + 12] < TempPav - BMTempPav / 2) { // se la zona è attiva e la temperatura di ritorno della zona è minore di quella impostata - banda morta
+  if (Zona[i] && VZoff[i] == false && erroreVZa[i] == false && Sonda[i + 12] < TempPav - BMTempPav / 2) {
+    // se la zona è attiva, non c'è errore di apertura e la temperatura di ritorno della zona è minore di quella impostata - banda morta
     if (Vzona[i] == false && Pinatt[i] == false) {
       myTime = millis(); // azzera il tempo di apertura della valvola
       Serial.print("VZ");
@@ -258,7 +262,7 @@ void pavimento(int i) {
       Vzona[i] = true; // a valvola della zona è in funzione
       Catt_VZ[i] = Catt_VZ[i] + 1; // decrementa il numero dei cicli di apertura/chiusura
       if (Catt_VZ[i] > nc_VZ) {
-        erroreVZ[i] = true; // se ha superato i cicli previsti attiva l'errore
+        erroreVZa[i] = true; // se ha superato i cicli previsti attiva l'errore
         Serial.print("Errore di apertura valvola di zona: ");
         Serial.println(i);
       }
@@ -279,7 +283,8 @@ void pavimento(int i) {
     }
   }
   VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola è chiusa
-  if (Zona[i] && VZoff[i] == false && erroreVZ[i] == false && Sonda[i + 12] > TempPav + BMTempPav / 2) { // se la zona è attiva e la temperatura di ritorno della zona è maggiore di quella impostata + banda morta
+  if (Zona[i] && VZoff[i] == false && erroreVZc[i] == false && Sonda[i + 12] > TempPav + BMTempPav / 2) {
+    // se la zona è attiva, non c'è errore di chiusura e la temperatura di ritorno della zona è maggiore di quella impostata + banda morta
     if (Vzona[i] == false && Pinatt[i] == false) {
       Serial.print("VZ");
       Serial.print(i);
@@ -290,7 +295,7 @@ void pavimento(int i) {
       Vzona[i] = true; // la valvola della zona è in funzione
       Catt_VZ[i] = Catt_VZ[i] - 1; // decrementa il numero dei cicli di apertura/chiusura
       if (Catt_VZ[i] <= 0) {
-        erroreVZ[i] = true; // se ha superato i cicli previsti attiva l'errore
+        erroreVZc[i] = true; // se ha superato i cicli previsti attiva l'errore
         Serial.print("Errore di chiusura valvola di zona: ");
         Serial.println(i);
       }
@@ -310,7 +315,8 @@ void pavimento(int i) {
       }
     }
   }
-  if (Zona[i] == false && VZoff[i] == false && erroreVZ[i] == false) { // disattiva la zona
+  if (Zona[i] == false && VZoff[i] == false && erroreVZc[i] == false) {
+    // se la zona è attiva, non è in chiusura e non è in errore di chiusura disattiva la zona
     VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola è chiusa
     if (Zinoff[i] == false && Catt_VZ[i] > 0) { // il ciclo di chiusura valvola è minore di 5 (deve fare 6 cicli)
       myTime6 = millis(); // azzera il tempo di chiusura della valvola
@@ -325,7 +331,7 @@ void pavimento(int i) {
       digitalWrite(relePin[i + 9], HIGH); // spegne il relè che chiude la valvola di zona     
     } else if (Catt_VZ[i] == 0) {
       digitalWrite(relePin[i + 9], HIGH); // spegne il relè che chiude la valvola di zona     
-      erroreVZ[i] = true; // se ha superato i cicli previsti attiva l'errore
+      erroreVZc[i] = true; // se ha superato i cicli previsti attiva l'errore di chiusura
     }
   }
 }
@@ -372,12 +378,27 @@ void valvola3vie() {
   TempV3vie = 30 + (20 - Sonda[1 - 1]) * 2 / 3; // imposta temperatura uscita valvola 3 vie in base alla tempratura esterna (50°C a -10°C e 30°C a 20°C);
   Serial.print("T3vie:");
   Serial.println(TempV3vie);
+  oled.setCursor(0, 6);
+  if (Valvola3vie) oled.print("on  ");
+  if (Valvola3vie == false) oled.print("off ");
+  oled.print((int)((float)Catt_V3vie / (float)nc_V3vie * 100));
+  oled.print(" S4:");
+  oled.print(Sonda[4 - 1]);
+  oled.print("` S4:");
+  oled.print(Sonda[4 - 1]);
+  oled.print("` S7:");
+  oled.print(Sonda[7 - 1]);
   if (Sonda[4 - 1] <  TempV3vie - BMTempV3vie / 2) {
     if (Valvola3vie == false && Valv3vieinatt == false) {
       myTime3 = millis();
       Serial.println("V3vie apre");
       digitalWrite(relePin[6 - 1], LOW);
       Valvola3vie = true;
+      Catt_V3vie = Catt_V3vie + 1; // decrementa il numero dei cicli di apertura/chiusura
+      if (Catt_V3vie > nc_V3vie) {
+        erroreV3viea = true; // se ha superato i cicli previsti attiva l'errore
+        Serial.println("Errore di apertura valvola 3 vie");
+      }   
     } else if (Valv3vieinatt == false) {
       if (millis() - myTime3 > T_V3vie) {
         Serial.println("V3vie spenta");
@@ -398,6 +419,11 @@ void valvola3vie() {
       myTime3 = millis();
       digitalWrite(relePin[5 - 1], LOW);
       Valv3vieinatt = true;
+      Catt_V3vie = Catt_V3vie + 1; // decrementa il numero dei cicli di apertura/chiusura
+      if (Catt_V3vie > nc_V3vie) {
+        erroreV3viec = true; // se ha superato i cicli previsti attiva l'errore
+        Serial.println("Errore di chiusura valvola 3 vie");
+      }   
     } else if (Valv3vieinatt == false) {
       if (millis() - myTime4 > T_V3vie) {
         Serial.println("V3vie spenta");
