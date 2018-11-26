@@ -1,7 +1,7 @@
 /*Creato da Giuseppe Tamanini
- * 22/11/2018
+ * 26/11/2018
  * Licenza CC BY-NC-SA 3.0 IT
- */
+*/
 
 //MISO - pin 50
 //MOSI - pin 51
@@ -96,41 +96,44 @@ boolean erroreVZa[4]; // errore di apertura valvola di zona
 boolean erroreVZc[4]; // errore di chiusura valcola di zona
 boolean TVZoff; // tutte le valvole di zona sono chiuse?
 boolean pompaST; // la pompa del solare termico è in funzione?
-boolean erroreST; // errore pompa solare termico
+boolean erroreST; // errore pompa comandata da R4 solare termico
 boolean Valvola3vie; // la valvola a 3 vie è in funzione?
 boolean Valv3vieinatt; // è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
 int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
 boolean erroreV3viea; // errore di apertura valvola 3 vie
 boolean erroreV3viec; // errore di chiusura valvola 3 vie
+boolean erroreV3vie; // errore malfunzionamento valvola 3 vie o pompa comandata da R7
 boolean pompaAS; // la pompa dello scambiatore dell'acqua sanitaria è in funzione?
 boolean erroreAS; // errore pompa acqua calda sanitaria
 boolean pompaCA; // la pompa uscita caldaia è in funzione
-boolean erroreCA; // errore pompa caldaia
+boolean erroreCA; // errore pompa comandata da R2 caldaia
 boolean rele07; // il rele07 che alimenta la pompa in uscita dalla valvola a 3vie è accesso?
 boolean lettemp; // ha già letto le temperature?
+boolean MessageRC; // Invia una email di Messaggio Richiesta Calore
 
-int TempPav = 35; // temperatura ritorno impianto a pavimento
-int BMTempPav = 4; // tolleranza Temperatura impianto a pavimento
-int T_VZ = 5000; // tempo in millisecondi (5 secondi) di apertura/chiusura valvola di zona dell'impianto a pavimento
-int TT_VZ = 30000; // tempo in millesecondi per la totale apertura/chiusura valvola di zona
-int T_att_ip = 5000; // tempo in millisecondi (30 secondi) di attesa prima della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
-int T_att_st = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno S03 del solare termico
+int TempPav[4] = {35, 35, 35, 35}; // temperature ritorno impianto a pavimento
+int BMTempPav[4] = {4, 4, 4, 4}; // tolleranze temperatura impianto a pavimento
+int T_VZ = 5000; // tempo in millisecondi di apertura/chiusura valvola di zona dell'impianto a pavimento
+int TT_VZ = 60000; // tempo in millesecondi (dato di targa) per la totale apertura/chiusura valvola di zona
+int T_att_ip = 300000; // tempo (da 30000 a 600000) millisecondi di attesa prima della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
+int T_att_st = 300000; // tempo 300000 millisecondi di attesa prima della lettura della temperatura di ritorno S03 del solare termico
 int TempV3vie; // temperatura uscita valvola a 3 vie (verrà calcolata dal programma in base alla temperatura esterna)
 int T_V3vie = 5000; // tempo in millisecondi (5 secondi) di apertura/chiusura valvola a 3 vie
-int TT_V3vie = 30000; // tempo in millisecondi di totale apertura/ciusura valvola a 3 vie
+int TT_V3vie = 105000; // tempo in millisecondi di totale apertura/ciusura valvola a 3 vie
 int T_att_V3vie = 30000; // tempo in millisecondi (3 minuti) di attesa prima della rilettura della temperatura di uscita dalla valvola a 3 vie
 int BMTempV3vie = 4; // tolleranza Temperatura uscita valvola 3 vie
-int T_att_pc = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno della caldaia
+int T_att_rc = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno della caldaia
 int T_att_as = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
 int T_att_ca = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno S12 dal puffer alla caldaia
 int BMTempAS = 2; // tolleranza Temperatura acqua sanitaria
-int Tempriltemp = 5000; // tempo in millisecondi di rilettura delle temperature
+int Tempriltemp = 5000; // tempo in millisecondi di rilettura delle temperature rilevate dalle sonde
 int nc_VZ; // numero dei cicli di apertura/chiusura delle valvole di zona
 int nc_V3vie; // numero dei cicli di apertura/chiusura delle valvola 3 vie
+int TempASMax = 55; // temperatura massima acqua sanitaria
 
 const int TempPavMin = 6; // allarme di TempPav minima (soglia antigelo)
 const int TempPavMax = 50; // allarme di TempPav massima
-const int TempASMax = 55; // temperatura massima acqua sanitaria
+
 const int TempPaMin = 25; // temperatura minima Puffer alto
 
 static unsigned long myTime; // tempo di apertura/chiusura valvole pavimento
@@ -143,6 +146,7 @@ static unsigned long myTime6; // tempo di chiusura valvole pavimento disattivazi
 static unsigned long myTime7; // tempo di attesa della rilettura delle temperature
 static unsigned long myTime8; // tempo di attesa della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
 static unsigned long myTime9; // tempo di attesa della temperatura di ritorno S12 dal puffer alla caldaia
+static unsigned long myTime0; // tempo di attesa della temperatura di ritorno S7 dagli impianti a pavimento
 
 String inputString = ""; // Stringa in entrata sulla seriale
 bool stringComplete = false;  // la stringa è completata?
@@ -200,12 +204,14 @@ void loop() {
   for (int i = 0; i < 4; i++) { 
     pavimento(i);
   }
-  for (int i = 0; i < 4; i++) { 
-    if (Pinatt[i] == true && rele07 == false) {
-      digitalWrite(relePin[7 - 1], LOW);; // accende il relè 07 che comanda la pompa uscita valvola 3 vie
-      rele07 = true;
-      Serial.println("R7acceso");
-      break;
+  if (TVZoff == false) { // se almeno una delle zone è attiva
+    for (int i = 0; i < 4; i++) { 
+      if (Pinatt[i] == true && rele07 == false) {
+        digitalWrite(relePin[7 - 1], LOW);; // accende il relè 07 che comanda la pompa uscita valvola 3 vie
+        rele07 = true;
+        Serial.println("R7acceso");
+        break;
+      }
     }
   }
   TVZoff = true; // pone la variabile TVZoff a vero
@@ -250,8 +256,8 @@ void pavimento(int i) {
   if (Zona[i] == false) oled.print("off ");
   oled.print((int)((float)Catt_VZ[i] / (float)nc_VZ * 100));
   VZoff[i] = digitalRead(inputPinO[i]); // legge il pin digitale che rileva se la valvola è aperta
-  if (Zona[i] && VZoff[i] == false && erroreVZa[i] == false && Sonda[i + 12] < TempPav - BMTempPav / 2) {
-    // se la zona è attiva, non c'è errore di apertura e la temperatura di ritorno della zona è minore di quella impostata - banda morta
+  if (Zona[i] && VZoff[i] == false && erroreVZa[i] == false && Sonda[i + 12] < TempPav[i] - BMTempPav[i] / 2) {
+    // se la zona è attiva, non c'è errore di apertura e la temperatura di ritorno della zona è minore di quella impostata meno banda morta
     if (Vzona[i] == false && Pinatt[i] == false) {
       myTime = millis(); // azzera il tempo di apertura della valvola
       Serial.print("VZ");
@@ -283,8 +289,8 @@ void pavimento(int i) {
     }
   }
   VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola è chiusa
-  if (Zona[i] && VZoff[i] == false && erroreVZc[i] == false && Sonda[i + 12] > TempPav + BMTempPav / 2) {
-    // se la zona è attiva, non c'è errore di chiusura e la temperatura di ritorno della zona è maggiore di quella impostata + banda morta
+  if (Zona[i] && VZoff[i] == false && erroreVZc[i] == false && Sonda[i + 12] > TempPav[i] + BMTempPav[i] / 2) {
+    // se la zona è attiva, non c'è errore di chiusura e la temperatura di ritorno della zona è maggiore di quella impostata più banda morta
     if (Vzona[i] == false && Pinatt[i] == false) {
       Serial.print("VZ");
       Serial.print(i);
@@ -384,13 +390,18 @@ void valvola3vie() {
   oled.print((int)((float)Catt_V3vie / (float)nc_V3vie * 100));
   oled.print(" S4:");
   oled.print(Sonda[4 - 1]);
-  oled.print("` S4:");
-  oled.print(Sonda[4 - 1]);
+  oled.print("` S6:");
+  oled.print(Sonda[6 - 1]);
   oled.print("` S7:");
   oled.print(Sonda[7 - 1]);
-  if (Sonda[4 - 1] <  TempV3vie - BMTempV3vie / 2) {
+  if (erroreV3vie) oled.print(" E");
+  if (erroreV3vie == false) oled.print("  ");
+  if (Sonda[6 - 1] > Sonda[4 - 1]) MessageRC = true;
+  if (Valvola3vie == false && erroreV3vie == false && erroreV3viea == false && Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2) {
+    // se la valvola 3 vie non è in movimento, non è in errore e la temperatura S6 è minore della temperatura impostata meno banda morta
     if (Valvola3vie == false && Valv3vieinatt == false) {
       myTime3 = millis();
+      myTime0 = millis();
       Serial.println("V3vie apre");
       digitalWrite(relePin[6 - 1], LOW);
       Valvola3vie = true;
@@ -413,7 +424,8 @@ void valvola3vie() {
       }
     }
   }
-  if (Sonda[4 - 1] > TempV3vie + BMTempV3vie / 2) {
+  if (Valvola3vie == false && erroreV3vie == false && erroreV3viec == false && Sonda[6 - 1] > TempV3vie + BMTempV3vie / 2) {
+    // se la valvola 3 vie non è in movimento, non è in errore e la temperatura S6 è maggiore della temperatura impostata più banda morta
     if (Valvola3vie == false && Valv3vieinatt == false) {
       Serial.println("V3vie chiude");
       myTime3 = millis();
@@ -438,7 +450,14 @@ void valvola3vie() {
       }
     }
   }
-}
+  if (Valvola3vie && Sonda[7 - 1] < Sonda[6 - 1]*0.9 && millis() - myTime0 > T_att_V3vie) {
+    // passato il tempo T_att_st se la temperatura di entrata al puffer basso è inferiore al 90% di quella dei pannelli viene segnalato un errore
+    Serial.println("Errore malfunzionamento pompa uscita valvola a 3 vie");
+    erroreV3vie = true;
+    Serial.println("R7spento");
+    digitalWrite(relePin[7 - 1], HIGH);
+    Valvola3vie = false;
+  }}
 
 void acquasanitaria() {
   oled.setCursor(0, 3);
@@ -453,7 +472,7 @@ void acquasanitaria() {
   oled.print(Sonda[9 - 1]);
   if (erroreAS) oled.print(" E");
   if (erroreAS == false) oled.print("  ");
-  if (pompaAS == false && Sonda[4 - 1] > Sonda[9 - 1] && Sonda[4 - 1] > TempPaMin && Sonda[9 - 1] < TempASMax) {
+  if (pompaAS == false && Sonda[8 - 1] >= Sonda[9 - 1] && Sonda[4 - 1] > TempPaMin && Sonda[9 - 1] < TempASMax) {
     // se la pompa acqua sanitaria non è in funzione e S4 maggiore S9 e S4 minore 25 e S8 minore TempASMax
     digitalWrite(relePin[3 - 1], LOW); // il relè 03 accende la pompaAS
     Serial.println("R3acceso");
@@ -502,8 +521,8 @@ void caldaia() {
     digitalWrite(relePin[2 - 1], HIGH);
     pompaCA = false;
   }
-  if (pompaCA && Sonda[11 - 1] < 55 &&  Sonda[12 - 1] < 50 && millis() - myTime5 > T_att_pc) {
-    // se dopo T_att_pc S11 < 55 e S12 < 50 ferma lapompa
+  if (pompaCA && Sonda[10 - 1] < 50 && millis() - myTime5 > T_att_rc) {
+    // se dopo T_att_rc e temperatura caldaia S10 minore di 50 ferma la pompa
     Serial.println("R2spento");
     digitalWrite(relePin[2 - 1], HIGH);
     pompaCA = false;
