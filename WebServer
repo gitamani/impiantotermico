@@ -1,6 +1,6 @@
 /* ESP8266 Webserver 'MIT License (MIT) Copyright (c) 2016 by David Bird'
  * Creato da Giuseppe Tamanini
- * 25/11/2018
+ * 26/11/2018
  * Licenza CC BY-NC-SA 3.0 IT
 */
   
@@ -40,10 +40,23 @@ int Tempriltemp = 5; // tempo in secondi di rilettura delle temperature rilevate
 // variabili da visualizzare
 int T[20] = {10, 65, 62, 55, 53, 50, 45, 50, 48, 80, 78, 70, 35, 36, 37, 38, 21, 21, 21, 21}; // Temperature pavimento
 boolean zona[4] = {true, false, true, true};
-int paVZ[4] = {25, 50, 0, 75};
-
+int paVZ[4] = {25, 50, 0, 75}; // percentuale apertura valvole di zonba
+boolean VZa[4] = {true, false, true, true}; // le valvola di zona aprono
+boolean VZc[4] = {false, true, false, false}; // le valvola di zona chiudono
+int paV3vie; // percentuale apertura della valvola 3 vie
+boolean Valvola3vie = true; // la valvola a 3 vie è in funzione?
+boolean Valvola3viea = true; // la valvola a 3 vie apre
+boolean Valvola3viec = false; // la valvola a 3 vie chiude
+int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
+boolean erroreV3viea = true; // errore di apertura valvola 3 vie
+boolean erroreV3viec = false; // errore di chiusura valvola 3 vie
+boolean erroreV3vie = true; // errore malfunzionamento pompa comandata da R7
 boolean pompaST = true; // la pompa del solare termico è in funzione?
 boolean erroreST = true; // errore pompa comandata da R4 solare termico
+boolean pompaAS = true; // la pompa dello scambiatore dell'acqua sanitaria è in funzione?
+boolean erroreAS = true; // errore pompa acqua calda sanitaria
+boolean pompaCA = true; // la pompa uscita caldaia è in funzione
+boolean erroreCA = true; // errore pompa comandata da R2 caldaia
 
 void setup() {
   Serial.begin(115200);
@@ -196,12 +209,20 @@ void creawebpage() {
      webpage += "Tempo di rilettura delle temperature rilevate dalle sonde (secondi): <input type='number' value='" + String(Tempriltemp) + "' min='30' max='3000' name='TRST'><br>";
      webpage += "<input type='submit' value='Salva impostazioni'>";
      webpage += "<h1>DATI IMPIANTO TERMICO</h1>";  
-     webpage += "IMPIANTO A PAVIMENTO:<br>";  
-     String szona1, szona2, szona3, szona4;
+     webpage += "<b>IMPIANTO A PAVIMENTO:</b><br>";  
+     String szona1, szona2, szona3, szona4, sVZa1, sVZa2, sVZa3, sVZa4, sVZc1, sVZc2, sVZc3, sVZc4;
      if (zona[0]) szona1 = "on "; else szona1 = "off";
      if (zona[1]) szona2 = "on "; else szona2 = "off";
      if (zona[2]) szona3 = "on "; else szona3 = "off";
      if (zona[3]) szona4 = "on "; else szona4 = "off";
+     if (VZa[0]) sVZa1 = "apre "; else sVZa1 = "";
+     if (VZa[1]) sVZa2 = "apre "; else sVZa2 = "";
+     if (VZa[2]) sVZa3 = "apre "; else sVZa3 = "";
+     if (VZa[3]) sVZa4 = "apre "; else sVZa4 = "";
+     if (VZc[0]) sVZc1 = "chiude "; else sVZc1 = "";
+     if (VZc[1]) sVZc2 = "chiude "; else sVZc2 = "";
+     if (VZc[2]) sVZc3 = "chiude "; else sVZc3 = "";
+     if (VZc[3]) sVZc4 = "chiude "; else sVZc4 = "";
      String seazona1, seazona2, seazona3, seazona4;
      if (erroreVZa[0]) seazona1 = "Errore apertura valvola "; else seazona1 = "";
      if (erroreVZa[1]) seazona2 = "Errore apertura valvola "; else seazona2 = "";
@@ -212,12 +233,31 @@ void creawebpage() {
      if (erroreVZc[1]) seczona2 = "Errore chiusura valvola "; else seczona2 = "";
      if (erroreVZc[2]) seczona3 = "Errore chiusura valvola "; else seczona3 = "";
      if (erroreVZc[3]) seczona4 = "Errore chiusura valvola "; else seczona4 = "";
-     webpage += "Zona 4 (P.2): " + String(T[16 - 1]) + "&deg;C " + szona4 + " " + paVZ[3] + "&#37; " + seazona4 + seczona4 + "- Zona 3 (P.1): " + String(T[15 - 1]) + "&deg;C " + szona3 + " " + paVZ[2] + "&#37; " + seazona3 + seczona3 + "- Zona 2 (P.T): " + String(T[14 - 1]) + "&deg;C " + szona2 + " " + paVZ[1] + "&#37; " + seazona2 + seczona2 + "- Zona 1 (P.int)1: " + String(T[13 - 1]) + "&deg;C " + szona1 + " " + paVZ[0] + "&#37; " + seazona1 + seczona1 + "<br>";
-     webpage += "SOLARE TERMICO:<br>";  
+     webpage += "Zona 4 (P.2): " + String(T[16 - 1]) + "&deg;C " + szona4 + sVZa4 + sVZc4 + paVZ[3] + "&#37; <font color='red'>" + seazona4 + seczona4 + "</font>- Zona 3 (P.1): " + String(T[15 - 1]) + "&deg;C " + szona3 + sVZa3 + sVZc3 + " " + paVZ[2] + "&#37; <font color='red'>" + seazona3 + seczona3 + "</font>- Zona 2 (P.T): " + String(T[14 - 1]) + "&deg;C " + szona2 + sVZa2 + sVZc2 + " " + paVZ[1] + "&#37; <font color='red'>" + seazona2 + seczona2 + "</font>- Zona 1 (P.int)1: " + String(T[13 - 1]) + "&deg;C " + szona1 + sVZa1 + sVZc1 + " " + paVZ[0] + "&#37; <font color='red'>" + seazona1 + seczona1 + "</font><br>";
+     webpage += "<b>VALVOLA A 3 VIE:</b><br>";  
+     String sValvola3vie, sValvola3viea, sValvola3viec, serroreV3viea, serroreV3viec,serroreV3vie;
+     if (Valvola3vie) sValvola3vie = "on  "; else sValvola3vie = "off ";
+     if (Valvola3viea) sValvola3viea = "apre "; else sValvola3viea = "";
+     if (Valvola3viec) sValvola3viec = "chiude "; else sValvola3viec= "";
+     if (erroreV3viea) serroreV3viea = "Errore apertura valvola 3 vie"; else serroreV3viea = "";
+     if (erroreV3viec) serroreV3viec = "Errore chiusura valvola 3 vie"; else serroreV3viec = "";
+     if (erroreV3vie) serroreV3vie = "Errore malfunzionamento pompa uscita valvola a 3 vie"; else serroreV3vie = "";
+     webpage += sValvola3vie + sValvola3viea + sValvola3viec + paV3vie + "&#37; <font color='red'>" + serroreV3viea + serroreV3viec + "</font> - Temperatura puffer alto: " + String(T[4 - 1]) + "&deg;C - Temperatura uscita pompa: " + String(T[6 - 1]) + "&deg;C - Temperatura ritorno da impianti a pavimento: " + String(T[7 - 1]) + "&deg; <font color='red'>" + serroreV3vie +"</font><br>";
+     webpage += "<b>SOLARE TERMICO:</b><br>";  
      String spompaST, seST;
      if (pompaST) spompaST = "on "; else spompaST = "off";
      if (erroreST) seST = "Errore malfunzionamento pompa solare termico"; else seST = "";
-     webpage += "Pompa R4: " + spompaST + " - Temperatura puffer basso: " + String(T[5 - 1]) + "&deg;C - Temperatura pannelli: " + String(T[2 - 1]) + "&deg;C - Temperatura entrata puffer: " + String(T[3 - 1]) + "&deg;<font color='red'>" + seST +"</font><br>";
+     webpage += "Pompa R4: " + spompaST + " - Temperatura puffer basso: " + String(T[5 - 1]) + "&deg;C - Temperatura pannelli: " + String(T[2 - 1]) + "&deg;C - Temperatura entrata puffer: " + String(T[3 - 1]) + "&deg; <font color='red'>" + seST +"</font><br>";
+     webpage += "<b>ACQUA CALDA SANITARIA:</b><br>";  
+     String spompaAS, seAS;
+     if (pompaAS) spompaAS = "on "; else spompaAS = "off";
+     if (erroreAS) seAS = "Errore malfunzionamento pompa acqua calda sanitaria"; else seAS = "";
+     webpage += "Pompa R3: " + spompaAS + " - Temperatura puffer alto: " + String(T[4 - 1]) + "&deg;C - Temperatura ingresso scambiatore: " + String(T[8 - 1]) + "&deg;C - Temperatura uscita scambiatore: " + String(T[9 - 1]) + "&deg; <font color='red'>" + seAS +"</font><br>";
+     webpage += "<b>CALDAIA:</b><br>";  
+     String spompaCA, seCA;
+     if (pompaCA) spompaCA = "on "; else spompaCA = "off";
+     if (erroreCA) seCA = "Errore malfunzionamento pompa caldaia"; else seCA = "";
+     webpage += "Pompa R2: " + spompaCA + " - Temperatura caldaia: " + String(T[10 - 1]) + "&deg;C - Temperatura uscita pompa: " + String(T[11 - 1]) + "&deg;C - Temperatura ritorno da puffer alto: " + String(T[12 - 1]) + "&deg; <font color='red'>" + seCA +"</font><br>";
      //webpage += "<meta http-equiv='refresh' content='1'>";
     webpage += "</form>";
    webpage += "</body>";
