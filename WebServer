@@ -1,13 +1,21 @@
-/* ESP8266 Webserver 'MIT License (MIT) Copyright (c) 2016 by David Bird'
- * Creato da Giuseppe Tamanini
- * 26/11/2018
+/* Creato da Giuseppe Tamanini
+ * 06/12/2018
  * Licenza CC BY-NC-SA 3.0 IT
 */
-  
+
+#include <SoftwareSerial.h>
+
+#define rxPin D5
+#define txPin D6
+
+// set up a new serial port
+SoftwareSerial mySerial =  SoftwareSerial(rxPin, txPin);
+
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
 #include <WiFiManager.h>     // https://github.com/tzapu/WiFiManager
+#include "Gsender.h"
 
 WiFiClient client;
 ESP8266WebServer server(80); // Start server on port 80 (default for a web-browser, change to your requirements, e.g. 8080 if your Router uses port 80
@@ -16,50 +24,62 @@ ESP8266WebServer server(80); // Start server on port 80 (default for a web-brows
                              // Example http://g6ejd.uk.to:8266 will be directed to http://192.168.0.40:8266 or whatever IP address your router gives to this server
 
 String webpage, Argument_Name, Clients_Response1, Clients_Response2;
+
+String data; // data
+
 // variabili da impostare
-int tempPav[4] = {35, 35, 35, 35}; // temperature ritorno impianto a pavimento
-int BMTempPav[4] = {4, 4, 4, 4}; // tolleranze temperatura (da 2 a 10) impianto a pavimento
-int T_VZ = 5; // tempo (da 1 a 30) secondi di apertura/chiusura valvola di zona dell'impianto a pavimento
-int TT_VZ = 60; // tempo in secondi  (dato di targa) per la totale apertura/chiusura valvola di zona
-int T_att_ip = 120; // tempo (da 30 a 3000) secondi di attesa prima della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
-boolean erroreVZa[4] = {true, false, false, false}; // errore di apertura valvola di zona
-boolean erroreVZc[4] = {false, true, false, false}; // errore di chiusura valcola di zona
-int T_att_st = 120; // tempo in secondi (3 minuti) di attesa prima della lettura della temperatura di ritorno S03 del solare termico
+int tempPav[4]; // temperature ritorno impianto a pavimento
+int BMTempPav[4]; // tolleranze temperatura (da 2 a 10) impianto a pavimento
+int T_VZ; // tempo in secondi di apertura/chiusura valvola di zona dell'impianto a pavimento
+int TT_VZ; // tempo in secondi per la totale apertura/chiusura valvola di zona
+int T_att_ip; // tempo secondi di attesa prima della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
+int T_att_st; // tempo in secondi di attesa prima della lettura della temperatura di ritorno S03 del solare termico
 int TempV3vie; // temperatura uscita valvola a 3 vie (verrà calcolata dal programma in base alla temperatura esterna)
-int T_V3vie = 5; // tempo (da 1 a 30) secondi di apertura/chiusura valvola a 3 vie
-int TT_V3vie = 105; // tempo in secondi (dato di targa) di totale apertura/ciusura valvola a 3 vie
-int T_att_V3vie = 180; // tempo in secondi (3 minuti) di attesa prima della rilettura della temperatura di uscita dalla valvola a 3 vie
-int BMTempV3vie = 4; // tolleranza  (da 2 a 10) temperatura uscita valvola 3 vie
-int TempASMax = 55; // temperatura massima acqua sanitaria
-int BMTempAS = 2; // tolleranza  (da 2 a 10) temperatura acqua sanitaria
-int T_att_as = 180; // tempo in secondi (3 minuti) di attesa prima della lettura della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
-int T_att_rc = 120; // tempo in secondi (2 minuti) di attesa prima della rilettura della temperatura della caldaia
-int T_att_ca = 180; // tempo in secondi (3 minuti) di attesa prima della lettura della temperatura di ritorno S12 dal puffer alla caldaia
-int Tempriltemp = 5; // tempo in secondi di rilettura delle temperature rilevate dalle sonde
+int T_V3vie; // tempo in secondi di apertura/chiusura valvola a 3 vie
+int TT_V3vie; // tempo in secondi (dato di targa) di totale apertura/ciusura valvola a 3 vie
+int T_att_V3vie; // tempo in secondi di attesa prima della rilettura della temperatura di uscita dalla valvola a 3 vie
+int BMTempV3vie; // tolleranza temperatura uscita valvola 3 vie
+int TempASMax; // temperatura massima acqua sanitaria
+int BMTempAS; // tolleranza temperatura acqua sanitaria
+int T_att_as; // tempo in secondi di attesa prima della lettura della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
+int T_att_rc; // tempo in secondi di attesa prima della rilettura della temperatura della caldaia
+int T_att_ca; // tempo in secondi di attesa prima della lettura della temperatura di ritorno S12 dal puffer alla caldaia
+int Tempriltemp; // tempo in secondi di rilettura delle temperature rilevate dalle sonde
 
 // variabili da visualizzare
-int T[20] = {10, 65, 62, 55, 53, 50, 45, 50, 48, 80, 78, 70, 35, 36, 37, 38, 21, 21, 21, 21}; // Temperature pavimento
-boolean zona[4] = {true, false, true, true};
-int paVZ[4] = {25, 50, 0, 75}; // percentuale apertura valvole di zonba
-boolean VZa[4] = {true, false, true, true}; // le valvola di zona aprono
-boolean VZc[4] = {false, true, false, false}; // le valvola di zona chiudono
+int T[20]; // Temperature pavimento
+boolean zona[4];
+int paVZ[4]; // percentuale apertura valvole di zonba
+boolean VZa[4]; // le valvola di zona aprono
+boolean VZc[4]; // le valvola di zona chiudono
+int Catt_VZ[4]; // ciclo attuale della valvola di zona
+boolean erroreVZa[4]; // errore di apertura valvola di zona
+boolean erroreVZc[4]; // errore di chiusura valcola di zona
 int paV3vie; // percentuale apertura della valvola 3 vie
-boolean Valvola3vie = true; // la valvola a 3 vie è in funzione?
-boolean Valvola3viea = true; // la valvola a 3 vie apre
-boolean Valvola3viec = false; // la valvola a 3 vie chiude
-int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
-boolean erroreV3viea = true; // errore di apertura valvola 3 vie
-boolean erroreV3viec = false; // errore di chiusura valvola 3 vie
-boolean erroreV3vie = true; // errore malfunzionamento pompa comandata da R7
-boolean pompaST = true; // la pompa del solare termico è in funzione?
-boolean erroreST = true; // errore pompa comandata da R4 solare termico
-boolean pompaAS = true; // la pompa dello scambiatore dell'acqua sanitaria è in funzione?
-boolean erroreAS = true; // errore pompa acqua calda sanitaria
-boolean pompaCA = true; // la pompa uscita caldaia è in funzione
-boolean erroreCA = true; // errore pompa comandata da R2 caldaia
+boolean Valvola3vie; // la valvola a 3 vie è in funzione?
+boolean Valvola3viea; // la valvola a 3 vie apre
+boolean Valvola3viec; // la valvola a 3 vie chiude
+int Catt_V3vie; // ciclo attuale della valvola 3vie
+boolean erroreV3viea; // errore di apertura valvola 3 vie
+boolean erroreV3viec; // errore di chiusura valvola 3 vie
+boolean erroreV3vie; // errore malfunzionamento pompa comandata da R7
+boolean pompaST; // la pompa del solare termico è in funzione?
+boolean erroreST; // errore pompa comandata da R4 solare termico
+boolean pompaAS; // la pompa dello scambiatore dell'acqua sanitaria è in funzione?
+boolean erroreAS; // errore pompa acqua calda sanitaria
+boolean pompaCA; // la pompa uscita caldaia è in funzione
+boolean erroreCA; // errore pompa comandata da R2 caldaia
+boolean pompaIP; // pompa uscita valvola 3 vie verso impianto pavimento è in funzione
+boolean MessageRC; // errore richiamo calore
+
+String inputString = "";         // a String to hold incoming data
+bool stringComplete = false;  // whether the string is complete
+int n;
+boolean complete; // ha completato di leggere i dati da Arduino Mega?
 
 void setup() {
   Serial.begin(115200);
+  mySerial.begin(9600);
   //WiFiManager intialisation. Once completed there is no need to repeat the process on the current board
   WiFiManager wifiManager;
   // New OOB ESP8266 has no Wi-Fi credentials so will connect and not need the next command to be uncommented and compiled in, a used one with incorrect credentials will
@@ -86,6 +106,7 @@ void setup() {
   // Next define what the server should do when a client connects
   server.on("/", HandleClient); // The client connected with no arguments e.g. http:192.160.0.40/
   server.on("/result", ShowClientResponse);
+  sender();
 }
 
 void HandleClient() {
@@ -123,12 +144,6 @@ void HandleClient() {
         BMTempPav[3] = server.arg(i).toInt();
         Clients_Response1 = server.arg(i);
       }
-      if (server.argName(i) == "BMP2") {
-        Serial.print(" Input received was: ");
-        Serial.println(server.arg(i));
-        BMTempPav[3] = server.arg(i).toInt();
-        Clients_Response1 = server.arg(i);
-      }
       if (server.argName(i) == "BMP1") {
         Serial.print(" Input received was: ");
         Serial.println(server.arg(i));
@@ -145,6 +160,84 @@ void HandleClient() {
         Serial.print(" Input received was: ");
         Serial.println(server.arg(i));
         BMTempPav[0] = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TVZ") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        T_VZ = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TTVZ") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        TT_VZ = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TAIP") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        T_att_ip = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TV3vie") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        T_V3vie = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TTV3vie") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        TT_V3vie = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TAV3vie") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        T_att_V3vie = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TAST") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        T_att_st = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "tempAS") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        TempASMax = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "BMPAS") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        BMTempAS = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TAAS") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        T_att_as = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TARC") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        T_att_rc = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TACA") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        T_att_ca = server.arg(i).toInt();
+        Clients_Response1 = server.arg(i);
+      }
+      if (server.argName(i) == "TRST") {
+        Serial.print(" Input received was: ");
+        Serial.println(server.arg(i));
+        Tempriltemp = server.arg(i).toInt();
         Clients_Response1 = server.arg(i);
       }
     }
@@ -171,18 +264,23 @@ void ShowClientResponse() {
 }
 
 void loop() {
-  server.handleClient();
+  if (complete) server.handleClient();
+  caricaDati(); 
+  delay(100);
 }
 
 void creawebpage() {
   webpage =  "<html>";
-   webpage += "<head><title>Impianto Termico</title>";
-    webpage += "<style>";
-     webpage += "body { background-color: #E6E6FA; font-family: Arial, Helvetica, Sans-Serif; Color: blue;}";
-    webpage += "</style>";
-   webpage += "</head>";
-   webpage += "<body>";
-    webpage += "<h1>GESTIONE IMPIANTO TERMICO</h1>";  
+  webpage += "<head><title>Impianto Termico</title>";
+  webpage += "<style>";
+  webpage += "body { background-color: #E6E6FA; font-family: Arial, Helvetica, Sans-Serif; Color: blue;}";
+  webpage += "</style>";
+  webpage += "</head>";
+  webpage += "<body>";
+  webpage += "<script type='text/javascript'> var timeleft = 60; var downloadTimer = setInterval(function(){ timeleft--; document.getElementById('countdowntimer').textContent = timeleft; if(timeleft <= 0) clearInterval(downloadTimer); },1000); </script>";
+  webpage += "<head> <meta http-equiv='refresh' content='60'> </head>";
+  webpage += "<h1>GESTIONE IMPIANTO TERMICO</h1>";
+  webpage += "<p>La pagina verr&agrave; aggiornata automaticamente fra <span id='countdowntimer'>10 </span> secondi</p>";
     String IPaddress = WiFi.localIP().toString();
     webpage += "<form action='http://"+IPaddress+"' method='POST'>";
      webpage += "<font size='4'>Temperatura impianto pavimento P.2: <input type='number' value='" + String(tempPav[0]) + "' min='20' max='50' name='tempP2'>";
@@ -205,7 +303,7 @@ void creawebpage() {
      webpage += " Banda morta: <input type='number' value='" + String(BMTempAS) + "' min='2' max='10' name='BMPAS'><br>";
      webpage += "Tempo di attesa prima della lettura della temperatura di uscita dello scambiatore acqua calda sanitaria (secondi): <input type='number' value='" + String(T_att_as) + "' min='30' max='3000' name='TAAS'><br>";
      webpage += "Tempo di attesa prima della rilettura della temperatura della caldaia (secondi): <input type='number' value='" + String(T_att_rc) + "' min='30' max='3000' name='TARC'><br>";
-     webpage += "Tempo in secondi prima della lettura della temperatura di ritorno dal puffer alla caldaia (secondi): <input type='number' value='" + String(T_att_ca) + "' min='30' max='3000' name='TACA'><br>";
+     webpage += "Tempo di attesa prima della lettura della temperatura di ritorno dal puffer alla caldaia (secondi): <input type='number' value='" + String(T_att_ca) + "' min='30' max='3000' name='TACA'><br>";
      webpage += "Tempo di rilettura delle temperature rilevate dalle sonde (secondi): <input type='number' value='" + String(Tempriltemp) + "' min='30' max='3000' name='TRST'><br>";
      webpage += "<input type='submit' value='Salva impostazioni'>";
      webpage += "<h1>DATI IMPIANTO TERMICO</h1>";  
@@ -262,4 +360,286 @@ void creawebpage() {
     webpage += "</form>";
    webpage += "</body>";
   webpage += "</html>";
+}
+
+void serialEvent() {
+  while (mySerial.available()) {
+    // get the new byte:
+    char inChar = (char)mySerial.read();
+    // add it to the inputString:
+    inputString += inChar;
+    // if the incoming character is a newline, set a flag so the main loop can
+    // do something about it:
+    if (inChar == '\n') {
+      inputString = inputString.substring(0, inputString.length() - 1);
+      stringComplete = true;
+    }
+  }
+}
+
+void caricaDati() {
+  serialEvent();
+  if (inputString != "") {
+    Serial.print("inputString:");
+    Serial.println(inputString);
+    String sm = inputString.substring(0,2);
+    int m = sm.toInt();
+    Serial.print("n:");
+    Serial.println(m);
+    inputString = inputString.substring(2, inputString.length());
+    Serial.println(inputString);
+    switch (m + 1) {
+      case 1:
+        data = inputString;
+        break;
+      case 2:
+        tempPav[0] = inputString.toInt();
+        break;
+      case 3:
+        tempPav[1] = inputString.toInt();
+        break;
+      case 4:
+        tempPav[2] = inputString.toInt();
+        break;
+      case 5:
+        tempPav[3] = inputString.toInt();
+        break;
+      case 6:
+        BMTempPav[0] = inputString.toInt();
+        break;
+      case 7:
+        BMTempPav[1] = inputString.toInt();
+        break;
+      case 8:
+        BMTempPav[2] = inputString.toInt();
+        break;
+      case 9:
+        BMTempPav[3] = inputString.toInt();
+        break;
+      case 10:
+        T_VZ = inputString.toInt() / 1000;
+        break;
+      case 11:
+        TT_VZ = inputString.toInt() / 1000;
+        break;
+      case 12:
+        T_att_ip = inputString.toInt() / 1000;
+        break;
+      case 13:
+        T_att_st  = inputString.toInt() / 1000;
+        break;
+      case 14:
+        T_V3vie = inputString.toInt() / 1000;
+        break;
+      case 15:
+        TT_V3vie = inputString.toInt() / 1000;
+        break;
+      case 16:
+        T_att_V3vie = inputString.toInt() /1000;
+        break;
+      case 17:
+        BMTempV3vie = inputString.toInt();
+        break;
+      case 18:
+        TempASMax = inputString.toInt();
+        break;
+      case 19:
+        BMTempAS = inputString.toInt();
+        break;
+      case 20:
+        T_att_rc = inputString.toInt() / 1000;
+        break;
+      case 21:
+        T_att_as = inputString.toInt() / 1000;
+        break;
+      case 22:
+        T_att_ca = inputString.toInt() / 1000;
+        break;
+      case 23:
+        Tempriltemp = inputString.toInt() / 1000;
+        break;
+      case 24:
+        zona[0] = inputString.toInt();
+        break;
+      case 25:
+        zona[1] = inputString.toInt();
+        break;
+      case 26:
+        zona[2] = inputString.toInt();
+        break;
+      case 27:
+        zona[3] = inputString.toInt();
+        break;
+      case 28:
+        T[0] = inputString.toInt();
+        break;
+      case 29:
+        T[1] = inputString.toInt();
+        break;
+      case 30:
+        T[2] = inputString.toInt();
+        break;
+      case 31:
+        T[3] = inputString.toInt();
+        break;
+      case 32:
+        T[4] = inputString.toInt();
+        break;
+      case 33:
+        T[5] = inputString.toInt();
+        break;
+      case 34:
+        T[6] = inputString.toInt();
+        break;
+      case 35:
+        T[7] = inputString.toInt();
+        break;
+      case 36:
+        T[8] = inputString.toInt();
+        break;
+      case 37:
+        T[9] = inputString.toInt();
+        break;
+      case 38:
+        T[10] = inputString.toInt();
+        break;
+      case 39:
+        T[11] = inputString.toInt();
+        break;
+      case 40:
+        T[12] = inputString.toInt();
+        break;
+      case 41:
+        T[13] = inputString.toInt();
+        break;
+      case 42:
+        T[14] = inputString.toInt();
+        break;
+      case 43:
+        T[15] = inputString.toInt();
+        break;
+      case 44:
+        T[16] = inputString.toInt();
+        break;
+      case 45:
+        T[17] = inputString.toInt();
+        break;
+      case 46:
+        T[18] = inputString.toInt();
+        break;
+      case 47:
+        T[19] = inputString.toInt();
+        break;
+      case 48:
+        VZa[0] = inputString.toInt();
+        break;
+      case 49:
+        VZa[1] = inputString.toInt();
+        break;
+      case 50:
+        VZa[2] = inputString.toInt();
+        break;
+      case 51:
+        VZa[3] = inputString.toInt();
+        break;
+      case 52:
+        VZc[0] = inputString.toInt();
+        break;
+      case 53:
+        VZc[1] = inputString.toInt();
+        break;
+      case 54:
+        VZc[2] = inputString.toInt();
+        break;
+      case 55:
+        VZc[3] = inputString.toInt();
+        break;
+      case 56:
+        Catt_VZ[0] = inputString.toInt();
+        break;
+      case 57:
+        Catt_VZ[1] = inputString.toInt();
+        break;
+      case 58:
+        Catt_VZ[2] = inputString.toInt();
+        break;
+      case 59:
+        Catt_VZ[3] = inputString.toInt();
+        break;
+      case 60:
+        erroreVZa[0] = inputString.toInt();
+        break;
+      case 61:
+        erroreVZa[1] = inputString.toInt();
+        break;
+      case 62:
+        erroreVZa[2] = inputString.toInt();
+        break;
+      case 63:
+        erroreVZa[3] = inputString.toInt();
+        break;
+      case 64:
+        erroreVZc[0] = inputString.toInt();
+        break;
+      case 65:
+        erroreVZc[1] = inputString.toInt();
+        break;
+      case 66:
+        erroreVZc[2] = inputString.toInt();
+        break;
+      case 67:
+        erroreVZc[3] = inputString.toInt();
+        break;
+      case 68:
+        pompaST = inputString.toInt();
+        break;
+      case 69:
+        erroreST = inputString.toInt();
+        break;
+      case 70:
+        TempV3vie = inputString.toInt();
+        break;
+      case 71:
+        Valvola3viea = inputString.toInt();
+        break;
+      case 72:
+        Valvola3viec = inputString.toInt();
+        break;
+      case 73:
+        Catt_V3vie = inputString.toInt();
+        break;
+      case 74:
+        erroreV3viea = inputString.toInt();
+        break;
+      case 75:
+        erroreV3vie = inputString.toInt();
+        break;
+      case 76:
+        pompaAS = inputString.toInt();
+        break;
+      case 77:
+        erroreAS = inputString.toInt();
+        break;
+      case 78:
+        pompaIP = inputString.toInt();
+        break;
+      case 79:
+        MessageRC = inputString.toInt();
+        complete = true;
+        break;
+    }
+    inputString = "";
+    stringComplete = false;
+  }
+}
+
+void sender() {
+  Gsender *gsender = Gsender::Instance();    // Getting pointer to class instance
+  String subject = "Inviato da ESP8266";
+  if(gsender->Subject(subject)->Send("bepitama@gmail.com", "Messaggio di prova")) {
+    Serial.println("Message send.");
+  } else {
+    Serial.print("Error sending message: ");
+    Serial.println(gsender->getError());
+  }
 }
