@@ -1,5 +1,5 @@
 /*Creato da Giuseppe Tamanini
- * 26/11/2018
+ * 06/12/2018
  * Licenza CC BY-NC-SA 3.0 IT
 */
 
@@ -9,8 +9,12 @@
 //CS   - pin 53
 
 #include <Wire.h>
+// Librerie display oled 128x64 SSD1306 connesso via I2C
 #include "SSD1306Ascii.h"
 #include "SSD1306AsciiWire.h"
+
+// Libreria DS1307 RTC connesso via I2C
+#include "RTClib.h"
 
 // 0X3C+SA0 - 0x3C or 0x3D
 #define I2C_ADDRESS 0x3C
@@ -19,6 +23,7 @@
 #define RST_PIN -1
 
 SSD1306AsciiWire oled;
+RTC_DS1307 rtc;
 
 int sensorPin[5] = {A0, A1, A2, A3, A4}; // pin analogico uscita RTD x 4 ingressi PT1000
 int selPinA[5] = {38, 40, 42, 44, 46};   // pin A di commutazione dei multiplexer
@@ -38,14 +43,14 @@ int inputPinO[4] = {6, 7, 8, 9}; // pin digitali in ingresso che leggono se le v
 // pin 7 apertura valvola P.T
 // pin 8 apertura valvola P.1
 // pin 9 apertura valvola P.2
-int inputPinIV3vie = 10; // pin 10 chiusura valvola 3 vie
-int inputPinOV3vie = 11; // pin 11 apertura valvola 3 vie
+int inputPinV3viec = 10; // pin 10 chiusura valvola 3 vie
+int inputPinV3viea = 11; // pin 11 apertura valvola 3 vie
 boolean dataPinAB[2] [4] = {{1, 0, 0, 1}, {0, 1, 0, 1}}; // dati per la commutazione dei multiplexer
 // 10 seleziona l'ingresso 1 della scheda RTD
 // 01 seleziona l'ingresso 2 della scheda RTD
 // 00 seleziona l'ingresso 3 della scheda RTD
 // 11 seleziona l'ingresso 4 della scheda RTD
-int relePin[16] = {22, 24, 26, 28, 30, 32, 34, 36, 23, 25, 27, 29, 31, 33, 35, 37};   // pin dove sono collegati i relè
+int relePin[16] = {22, 24, 26, 28, 30, 32, 34, 36, 23, 25, 27, 29, 31, 33, 35, 37}; // pin dove sono collegati i relè
 // pin 22 relè 02 Esterno caldaia
 // pin 24 relè 03 Acqua calda sanitaria
 // pin 26 relè 04 Solare termico
@@ -87,19 +92,24 @@ int Sonda[20]; // matrice sonde temperatura
 // Sonda 20 temperatura ambiente (P.2)
 
 boolean Zona[4]; // la zona è attiva? (se la zona non è attiva la volvola di zona viene chiusa)
-boolean Vzona[4]; // una delle valvole di zona è in funzione?
+boolean Vzona[4]; // la valvola di zona è in funzione?
+boolean Vzonaa[4]; // la valvola di zona è in fase di apertura;
+boolean Vzonac[4]; // la valvola di zona è in fase di chiusura;
 boolean Pinatt[4]; // è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
 boolean Zinoff[4]; // è in chiusura della valvola di zona per la disattivazione della zona
 int Catt_VZ[4] = {0, 0, 0, 0}; // ciclo attuale della valvola di zona
-boolean VZoff[4]; // la valvola di zona è chiusa
+boolean VZoff[4]; // la valvola di zona è ferma
 boolean erroreVZa[4]; // errore di apertura valvola di zona
 boolean erroreVZc[4]; // errore di chiusura valcola di zona
 boolean TVZoff; // tutte le valvole di zona sono chiuse?
 boolean pompaST; // la pompa del solare termico è in funzione?
 boolean erroreST; // errore pompa comandata da R4 solare termico
+boolean Valvola3viea; // la valvola a 3 vie è in fase di apertura?
+boolean Valvola3viec; // la valvola a 3 vie è in fase di chiusura?
 boolean Valvola3vie; // la valvola a 3 vie è in funzione?
 boolean Valv3vieinatt; // è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
 int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
+boolean V3vieoff; // la valvola 3 vie non è ferma
 boolean erroreV3viea; // errore di apertura valvola 3 vie
 boolean erroreV3viec; // errore di chiusura valvola 3 vie
 boolean erroreV3vie; // errore malfunzionamento valvola 3 vie o pompa comandata da R7
@@ -107,26 +117,26 @@ boolean pompaAS; // la pompa dello scambiatore dell'acqua sanitaria è in funzio
 boolean erroreAS; // errore pompa acqua calda sanitaria
 boolean pompaCA; // la pompa uscita caldaia è in funzione
 boolean erroreCA; // errore pompa comandata da R2 caldaia
-boolean rele07; // il rele07 che alimenta la pompa in uscita dalla valvola a 3vie è accesso?
+boolean pompaIP; // pompa in uscita dalla valvola a 3vie verso l'impianto a pavimento?
 boolean lettemp; // ha già letto le temperature?
 boolean MessageRC; // Invia una email di Messaggio Richiesta Calore
 
 int TempPav[4] = {35, 35, 35, 35}; // temperature ritorno impianto a pavimento
 int BMTempPav[4] = {4, 4, 4, 4}; // tolleranze temperatura impianto a pavimento
-int T_VZ = 5000; // tempo in millisecondi di apertura/chiusura valvola di zona dell'impianto a pavimento
-int TT_VZ = 60000; // tempo in millesecondi (dato di targa) per la totale apertura/chiusura valvola di zona
-int T_att_ip = 300000; // tempo (da 30000 a 600000) millisecondi di attesa prima della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
-int T_att_st = 300000; // tempo 300000 millisecondi di attesa prima della lettura della temperatura di ritorno S03 del solare termico
+long T_VZ = 5000; // tempo in millisecondi di apertura/chiusura valvola di zona dell'impianto a pavimento
+long TT_VZ = 60000; // tempo in millesecondi (dato di targa) per la totale apertura/chiusura valvola di zona
+long T_att_ip = 300000; // tempo (da 30000 a 600000) millisecondi di attesa prima della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
+long T_att_st = 300000; // tempo 300000 millisecondi di attesa prima della lettura della temperatura di ritorno S03 del solare termico
 int TempV3vie; // temperatura uscita valvola a 3 vie (verrà calcolata dal programma in base alla temperatura esterna)
-int T_V3vie = 5000; // tempo in millisecondi (5 secondi) di apertura/chiusura valvola a 3 vie
-int TT_V3vie = 105000; // tempo in millisecondi di totale apertura/ciusura valvola a 3 vie
-int T_att_V3vie = 30000; // tempo in millisecondi (3 minuti) di attesa prima della rilettura della temperatura di uscita dalla valvola a 3 vie
+long T_V3vie = 5000; // tempo in millisecondi (5 secondi) di apertura/chiusura valvola a 3 vie
+long TT_V3vie = 105000; // tempo in millisecondi di totale apertura/ciusura valvola a 3 vie
+long T_att_V3vie = 30000; // tempo in millisecondi (3 minuti) di attesa prima della rilettura della temperatura di uscita dalla valvola a 3 vie
 int BMTempV3vie = 4; // tolleranza Temperatura uscita valvola 3 vie
-int T_att_rc = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno della caldaia
-int T_att_as = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
-int T_att_ca = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno S12 dal puffer alla caldaia
+long T_att_rc = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno della caldaia
+long T_att_as = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
+long T_att_ca = 30000; // tempo in millisecondi (3 minuti) di attesa prima della lettura della temperatura di ritorno S12 dal puffer alla caldaia
 int BMTempAS = 2; // tolleranza Temperatura acqua sanitaria
-int Tempriltemp = 5000; // tempo in millisecondi di rilettura delle temperature rilevate dalle sonde
+long Tempriltemp = 5000; // tempo in millisecondi di rilettura delle temperature rilevate dalle sonde
 int nc_VZ; // numero dei cicli di apertura/chiusura delle valvole di zona
 int nc_V3vie; // numero dei cicli di apertura/chiusura delle valvola 3 vie
 int TempASMax = 55; // temperatura massima acqua sanitaria
@@ -135,6 +145,15 @@ const int TempPavMin = 6; // allarme di TempPav minima (soglia antigelo)
 const int TempPavMax = 50; // allarme di TempPav massima
 
 const int TempPaMin = 25; // temperatura minima Puffer alto
+
+int anno; // variabili dell'orologio
+int mese;
+int giorno;
+int ora;
+int minuti;
+int oldminuti;
+int giornosettimana;
+String sgiornosettimana[7] = {"Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"};
 
 static unsigned long myTime; // tempo di apertura/chiusura valvole pavimento
 static unsigned long myTime1; // tempo di attesa rilettura valvole pavimento
@@ -149,10 +168,12 @@ static unsigned long myTime9; // tempo di attesa della temperatura di ritorno S1
 static unsigned long myTime0; // tempo di attesa della temperatura di ritorno S7 dagli impianti a pavimento
 
 String inputString = ""; // Stringa in entrata sulla seriale
-bool stringComplete = false;  // la stringa è completata?
+bool outputComplete = false;  // la stringa è completata?
+int n = 0; // indica il numero della variabile inviata via seriale1
 
 void setup() {
   Serial.begin(115200);
+  Serial1.begin(9600);
   analogReference(INTERNAL2V56);
   inputString.reserve(50);
   
@@ -166,7 +187,20 @@ void setup() {
   #endif // RST_PIN >= 0
   oled.setFont(Callibri10);
   oled.clear();
-    
+
+  if (! rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    while (1);
+  }
+
+  if (! rtc.isrunning()) {
+    Serial.println("RTC is NOT running!");
+    // following line sets the RTC to the date & time this sketch was compiled
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    // This line sets the RTC with an explicit date & time, for example to set
+    // January 21, 2014 at 3am you would call:
+    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+  }
   // declare the selPin as an OUTPUT:
   for (int i = 0; i < 5 ; i++) {
     pinMode(inputPinI[i], INPUT);
@@ -183,32 +217,41 @@ void setup() {
   }
   nc_VZ = TT_VZ / 5000;
   if (nc_VZ * 5000 < TT_VZ) nc_VZ = nc_VZ + 1; // calcola il numero dei cicli che servono per completare l'apertura/chiusura delle valvole di zona
-  nc_V3vie = TT_VZ / 5000;
-  if (nc_V3vie * 5000 < TT_VZ) nc_V3vie = nc_V3vie + 1; // calcola il numero dei cicli che servono per completare l'apertura/chiusura della valvola 3 vie
-  chiude_VZ();
+  nc_V3vie = TT_V3vie / 5000;
+  if (nc_V3vie * 5000 < TT_V3vie) nc_V3vie = nc_V3vie + 1; // calcola il numero dei cicli che servono per completare l'apertura/chiusura della valvola 3 vie
+  chiude_V();
 }
 
 void loop() {
-  if (stringComplete) {
-    inputString=inputString.substring(0,5);
-    Serial.println(inputString);
-    if (inputString == "Z0off") {
-      Zona[0] = false;
-      VZoff[0] = false;
-      Serial.println("Zona 0 in spegnimento");
-      inputString="";
-      stringComplete = false;
-    }
-  }
+  DateTime now = rtc.now();
+  anno = now.year();
+  mese = now.month();
+  giorno = now.day();
+  ora = now.hour();
+  minuti = now.minute();
+  oled.setCursor(0, 6);
+  giornosettimana = now.dayOfTheWeek();
+  oled.print(sgiornosettimana[giornosettimana]);
+  oled.print(" ");
+  oled.print(String(giorno));
+  oled.print("/");
+  oled.print(String(mese));
+  oled.print("/");
+  oled.print(String(anno));
+  oled.print(" ");
+  oled.print(String(ora));
+  oled.print(":");
+  oled.print(String(minuti));
+  //inviaDati();
   leggitemperature();
-  for (int i = 0; i < 4; i++) { 
+  for (int i = 0; i < 4; i++) {
     pavimento(i);
   }
   if (TVZoff == false) { // se almeno una delle zone è attiva
     for (int i = 0; i < 4; i++) { 
-      if (Pinatt[i] == true && rele07 == false) {
+      if (Pinatt[i] == true && pompaIP == false) {
         digitalWrite(relePin[7 - 1], LOW);; // accende il relè 07 che comanda la pompa uscita valvola 3 vie
-        rele07 = true;
+        pompaIP = true;
         Serial.println("R7acceso");
         break;
       }
@@ -227,17 +270,18 @@ void loop() {
     }
   }
   if (TVZoff) { // se tutte le valvole di zona sono chiuse
-    if (rele07) {
+    if (pompaIP) {
       digitalWrite(relePin[7 - 1], HIGH); // spegne il relè 07 che comanda la pompa uscita valvola 3 vie
       Serial.println("R7spento");
-      rele07 = false;
+      pompaIP = false;
     }
   }
   solaretermico();
   valvola3vie();
   acquasanitaria();
   caldaia();
-  delay(5000);
+  inviaDati();
+  delay(10000);
 }
 
 void pavimento(int i) {
@@ -258,6 +302,7 @@ void pavimento(int i) {
   VZoff[i] = digitalRead(inputPinO[i]); // legge il pin digitale che rileva se la valvola è aperta
   if (Zona[i] && VZoff[i] == false && erroreVZa[i] == false && Sonda[i + 12] < TempPav[i] - BMTempPav[i] / 2) {
     // se la zona è attiva, non c'è errore di apertura e la temperatura di ritorno della zona è minore di quella impostata meno banda morta
+    Vzonaa[i] = true; // la valvola di zona è in fase di chiusura
     if (Vzona[i] == false && Pinatt[i] == false) {
       myTime = millis(); // azzera il tempo di apertura della valvola
       Serial.print("VZ");
@@ -268,6 +313,7 @@ void pavimento(int i) {
       Vzona[i] = true; // a valvola della zona è in funzione
       Catt_VZ[i] = Catt_VZ[i] + 1; // decrementa il numero dei cicli di apertura/chiusura
       if (Catt_VZ[i] > nc_VZ) {
+        Catt_VZ[i] = nc_VZ;
         erroreVZa[i] = true; // se ha superato i cicli previsti attiva l'errore
         Serial.print("Errore di apertura valvola di zona: ");
         Serial.println(i);
@@ -291,6 +337,7 @@ void pavimento(int i) {
   VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola è chiusa
   if (Zona[i] && VZoff[i] == false && erroreVZc[i] == false && Sonda[i + 12] > TempPav[i] + BMTempPav[i] / 2) {
     // se la zona è attiva, non c'è errore di chiusura e la temperatura di ritorno della zona è maggiore di quella impostata più banda morta
+    Vzonac[i] = true; // la valvola di zona è in fase di chiusura;
     if (Vzona[i] == false && Pinatt[i] == false) {
       Serial.print("VZ");
       Serial.print(i);
@@ -301,6 +348,7 @@ void pavimento(int i) {
       Vzona[i] = true; // la valvola della zona è in funzione
       Catt_VZ[i] = Catt_VZ[i] - 1; // decrementa il numero dei cicli di apertura/chiusura
       if (Catt_VZ[i] <= 0) {
+        Catt_VZ[i] = 0;
         erroreVZc[i] = true; // se ha superato i cicli previsti attiva l'errore
         Serial.print("Errore di chiusura valvola di zona: ");
         Serial.println(i);
@@ -322,6 +370,8 @@ void pavimento(int i) {
     }
   }
   if (Zona[i] == false && VZoff[i] == false && erroreVZc[i] == false) {
+    Vzonaa[i] = false;
+    Vzonac[i] = false;
     // se la zona è attiva, non è in chiusura e non è in errore di chiusura disattiva la zona
     VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola è chiusa
     if (Zinoff[i] == false && Catt_VZ[i] > 0) { // il ciclo di chiusura valvola è minore di 5 (deve fare 6 cicli)
@@ -330,7 +380,7 @@ void pavimento(int i) {
       digitalWrite(relePin[i + 9], LOW); // accende il relè che chiude la valvola di zona
       Zinoff[i] == true;
     } else if (Zinoff[i] && Catt_VZ[i] > 0 && millis() - myTime6 > 5000) { // ha eseguito il primo ciclo di chiusura e sono passati 5 secondi
-      Catt_VZ[i] = Catt_VZ[i] - 1; // incrementa il ciclo di chiusura
+      Catt_VZ[i] = Catt_VZ[i] - 1; // decrementa il ciclo di chiusura
       Zinoff[i] = false;
     } else if (VZoff[i]) {
       Catt_VZ[i] = 0;
@@ -343,7 +393,7 @@ void pavimento(int i) {
 }
 
 void solaretermico() {
-  oled.setCursor(0, 2);
+  oled.setCursor(0, 3);
   oled.print("R4:");
   if (pompaST) oled.print("on ");
   if (pompaST == false) oled.print("off");
@@ -384,7 +434,7 @@ void valvola3vie() {
   TempV3vie = 30 + (20 - Sonda[1 - 1]) * 2 / 3; // imposta temperatura uscita valvola 3 vie in base alla tempratura esterna (50°C a -10°C e 30°C a 20°C);
   Serial.print("T3vie:");
   Serial.println(TempV3vie);
-  oled.setCursor(0, 6);
+  oled.setCursor(0, 2);
   if (Valvola3vie) oled.print("on  ");
   if (Valvola3vie == false) oled.print("off ");
   oled.print((int)((float)Catt_V3vie / (float)nc_V3vie * 100));
@@ -397,8 +447,9 @@ void valvola3vie() {
   if (erroreV3vie) oled.print(" E");
   if (erroreV3vie == false) oled.print("  ");
   if (Sonda[6 - 1] > Sonda[4 - 1]) MessageRC = true;
-  if (Valvola3vie == false && erroreV3vie == false && erroreV3viea == false && Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2) {
-    // se la valvola 3 vie non è in movimento, non è in errore e la temperatura S6 è minore della temperatura impostata meno banda morta
+  if (Valvola3vie == false && V3vieoff == false && erroreV3vie == false && erroreV3viea == false && Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2) {
+    Valvola3viea = true; // la valvola a 3 vie è in fase di apertura
+    // se la valvola 3 vie non è non è chiusa, in movimento,in errore e la temperatura S6 è minore della temperatura impostata meno banda morta
     if (Valvola3vie == false && Valv3vieinatt == false) {
       myTime3 = millis();
       myTime0 = millis();
@@ -424,8 +475,9 @@ void valvola3vie() {
       }
     }
   }
-  if (Valvola3vie == false && erroreV3vie == false && erroreV3viec == false && Sonda[6 - 1] > TempV3vie + BMTempV3vie / 2) {
-    // se la valvola 3 vie non è in movimento, non è in errore e la temperatura S6 è maggiore della temperatura impostata più banda morta
+  if (Valvola3vie == false && V3vieoff == false && erroreV3vie == false && erroreV3viec == false && Sonda[6 - 1] > TempV3vie + BMTempV3vie / 2) {
+    // se la valvola 3 vie non è chiusa, in movimento, non è in errore e la temperatura S6 è maggiore della temperatura impostata più banda morta
+    Valvola3viec = true; // la valvola a 3 vie è in fase di chiusura
     if (Valvola3vie == false && Valv3vieinatt == false) {
       Serial.println("V3vie chiude");
       myTime3 = millis();
@@ -457,7 +509,8 @@ void valvola3vie() {
     Serial.println("R7spento");
     digitalWrite(relePin[7 - 1], HIGH);
     Valvola3vie = false;
-  }}
+  }
+}
 
 void acquasanitaria() {
   oled.setCursor(0, 3);
@@ -472,7 +525,7 @@ void acquasanitaria() {
   oled.print(Sonda[9 - 1]);
   if (erroreAS) oled.print(" E");
   if (erroreAS == false) oled.print("  ");
-  if (pompaAS == false && Sonda[8 - 1] >= Sonda[9 - 1] && Sonda[4 - 1] > TempPaMin && Sonda[9 - 1] < TempASMax) {
+  if (pompaAS == false && Sonda[8 - 1] < Sonda[9 - 1] + BMTempAS / 2 && Sonda[4 - 1] > TempPaMin && Sonda[9 - 1] < TempASMax) {
     // se la pompa acqua sanitaria non è in funzione e S4 maggiore S9 e S4 minore 25 e S8 minore TempASMax
     digitalWrite(relePin[3 - 1], LOW); // il relè 03 accende la pompaAS
     Serial.println("R3acceso");
@@ -486,7 +539,7 @@ void acquasanitaria() {
     digitalWrite(relePin[3 - 1], HIGH);
     pompaAS = false;
   }
-  if (pompaAS && Sonda[9 - 1] >= Sonda[8 - 1] + BMTempAS / 2) { // se la pompa è accesa e S08 uguale a S09 + BM/2
+  if (pompaAS && Sonda[9 - 1] == Sonda[8 - 1] - BMTempAS / 2) { // se la pompa è accesa e S08 uguale a S09 + BM/2
     Serial.println("R3spento");
     digitalWrite(relePin[3 - 1], HIGH); // il relè 03 spegne la pompaAS
     pompaAS = false; //pone falsa pompaAS
@@ -550,22 +603,20 @@ void leggitemperature() {
   }
 }
 
-void chiude_VZ() {
+void chiude_V() {
   // display a line of text
   oled.setCursor(42,2);
   oled.print("Chiusura");
   oled.setCursor(27,3);
   oled.print("valvole di zona");
 
-  // update display with all of the above graphics
-  
   for (int i = 0; i < 4 ; i++) { // chiude le valvole di zona finché non sono rilevate tali 
     digitalWrite(relePin[i + 9], LOW);
   }
   TVZoff = false; // pone la variabile TVZoff a falso
   do {
     for (int i = 0; i < 4; i++) { // controlla se le valvole di zona sono chiuse 
-      delay(500); // aspetta un secondo
+      delay(500); // aspetta mezzo secondo
       VZoff[i] = digitalRead(inputPinI[i]); // legge il pin digitale che rileva se la valvola di zona è chiusa
       if (VZoff[i] == false) break; // nel caso una qualsiasi non lo sia esce dal ciclo for
       TVZoff = true; // se tutte le valvole risultano chiuse pone TVZoff a vero
@@ -575,18 +626,279 @@ void chiude_VZ() {
     digitalWrite(relePin[i + 9], HIGH);
   }
   oled.clear();
+  oled.setCursor(42,2);
+  oled.print("Chiusura");
+  oled.setCursor(30,3);
+  oled.print("valvola 3 vie");
+  digitalWrite(relePin[5 - 1], LOW); // chiude la valvola 3 vie finché non è rilevata tale
+  do {
+    delay(500); // aspetta mezzo secondo
+    V3vieoff = digitalRead(inputPinV3viec); // legge il pin digitale che rileva se la valvola di zona è chiusa
+  } while (V3vieoff == false); // Se TVZoff è falso ripete il ciclo while  
+  oled.clear();
   oled.setCursor(45,3);
   oled.print("Finito!");
   delay(2000);
   oled.clear();
 }
 
-void serialEvent() {
-  while (Serial.available()) { // attende un nuovo carattere sulla seriale
-    char inChar = (char)Serial.read(); // lo legge e lo memorizza in inChar
-    inputString += inChar; // lo aggiunge a inputString:
-    if (inChar == '\n') {  // se arriva un carettare di nuova linea
-      stringComplete = true; // pone a vera la variabile stringComplete
+
+void inviaDati() {
+  for (int m = 0; m < 79; m++) {
+    Serial.println(m);
+    char buffer[2];
+    sprintf(buffer, "%02d", m);
+    Serial1.print(buffer);
+    switch (m + 1) {
+      case 1:
+        Serial1.print(sgiornosettimana[giornosettimana]);
+        Serial1.print(" ");
+        Serial1.print(giorno);
+        Serial1.print("/");
+        Serial1.print(mese);
+        Serial1.print("/");
+        Serial1.print(anno);
+        Serial1.print(" ");
+        Serial1.print(ora);
+        Serial1.print(":");
+        Serial1.println(minuti);
+        break;
+      case 2:
+        Serial1.println(TempPav[0]);  
+        break;
+      case 3:
+        Serial1.println(TempPav[1]); 
+        break;
+      case 4:
+        Serial1.println(TempPav[2]);  
+        break;
+      case 5:
+        Serial1.println(TempPav[3]); 
+        break;
+      case 6:
+        Serial1.println(BMTempPav[0]);
+        break;
+      case 7:
+        Serial1.println(BMTempPav[1]);
+        break;
+      case 8:
+        Serial1.println(BMTempPav[2]);
+        break;
+      case 9:
+        Serial1.println(BMTempPav[3]);
+        break;
+      case 10:
+        Serial1.println(T_VZ);
+        break;
+      case 11:
+        Serial1.println(TT_VZ);
+        break;
+      case 12:
+        Serial1.println(T_att_ip);
+        break;
+      case 13:
+        Serial1.println(T_att_st);
+        break;
+      case 14:
+        Serial1.println(T_V3vie);
+        break;
+      case 15:
+        Serial1.println(TT_V3vie);
+        break;
+      case 16:
+        Serial1.println(T_att_V3vie);
+        break;
+      case 17:
+        Serial1.println(BMTempV3vie);
+        break;
+      case 18:
+        Serial1.println(TempASMax);
+        break;
+      case 19:
+        Serial1.println(BMTempAS);
+        break;
+      case 20:
+        Serial1.println(T_att_rc);
+        break;
+      case 21:
+        Serial1.println(T_att_as);
+        break;
+      case 22:
+        Serial1.println(T_att_ca);
+        break;
+      case 23:
+        Serial1.println(Tempriltemp);
+        break;
+      case 24:
+        Serial1.println(Zona[0]);
+        break;
+      case 25:
+        Serial1.println(Zona[1]);
+        break;
+      case 26:
+        Serial1.println(Zona[2]);
+        break;
+      case 27:
+        Serial1.println(Zona[3]);
+        break;
+      case 28:
+        Serial1.println(Sonda[0]);
+        break;
+      case 29:
+        Serial1.println(Sonda[1]);
+        break;
+      case 30:
+        Serial1.println(Sonda[2]);
+        break;
+      case 31:
+        Serial1.println(Sonda[3]);
+        break;
+      case 32:
+        Serial1.println(Sonda[4]);
+        break;
+      case 33:
+        Serial1.println(Sonda[5]);
+        break;
+      case 34:
+        Serial1.println(Sonda[6]);
+        break;
+      case 35:
+        Serial1.println(Sonda[7]);
+        break;
+      case 36:
+        Serial1.println(Sonda[8]);
+        break;
+      case 37:
+        Serial1.println(Sonda[9]);
+        break;
+      case 38:
+        Serial1.println(Sonda[10]);
+        break;
+      case 39:
+        Serial1.println(Sonda[11]);
+        break;
+      case 40:
+        Serial1.println(Sonda[12]);
+        break;
+      case 41:
+        Serial1.println(Sonda[13]);
+        break;
+      case 42:
+        Serial1.println(Sonda[14]);
+        break;
+      case 43:
+        Serial1.println(Sonda[15]);
+        break;
+      case 44:
+        Serial1.println(Sonda[16]);
+        break;
+      case 45:
+        Serial1.println(Sonda[17]);
+        break;
+      case 46:
+        Serial1.println(Sonda[18]);
+        break;
+      case 47:
+        Serial1.println(Sonda[19]);
+        break;
+      case 48:
+        Serial1.println(Vzonaa[0]);
+        break;
+      case 49:
+        Serial1.println(Vzonaa[1]);
+        break;
+      case 50:
+        Serial1.println(Vzonaa[2]);
+        break;
+      case 51:
+        Serial1.println(Vzonaa[3]);
+        break;
+      case 52:
+        Serial1.println(Vzonac[0]);
+        break;
+      case 53:
+        Serial1.println(Vzonac[1]);
+        break;
+      case 54:
+        Serial1.println(Vzonac[2]);
+        break;
+      case 55:
+        Serial1.println(Vzonac[3]);
+        break;
+      case 56:
+        Serial1.println(Catt_VZ[0]);
+        break;
+      case 57:
+        Serial1.println(Catt_VZ[1]);
+        break;
+      case 58:
+        Serial1.println(Catt_VZ[2]);
+        break;
+      case 59:
+        Serial1.println(Catt_VZ[3]);
+        break;
+      case 60:
+        Serial1.println(erroreVZa[0]);
+        break;
+      case 61:
+        Serial1.println(erroreVZa[1]);
+        break;
+      case 62:
+        Serial1.println(erroreVZa[2]);
+        break;
+      case 63:
+        Serial1.println(erroreVZa[3]);
+        break;
+      case 64:
+        Serial1.println(erroreVZc[0]);
+        break;
+      case 65:
+        Serial1.println(erroreVZc[1]);
+        break;
+      case 66:
+        Serial1.println(erroreVZc[2]);
+        break;
+      case 67:
+        Serial1.println(erroreVZc[3]);
+        break;
+      case 68:
+        Serial1.println(pompaST);
+        break;
+      case 69:
+        Serial1.println(erroreST);
+        break;
+      case 70:
+        Serial1.println(TempV3vie);
+        break;
+      case 71:
+        Serial1.println(Valvola3viea);
+        break;
+      case 72:
+        Serial1.println(Valvola3viec);
+        break;
+      case 73:
+        Serial1.println(Catt_V3vie);
+        break;
+      case 74:
+        Serial1.println(erroreV3viea);
+        break;
+      case 75:
+        Serial1.println(erroreV3vie);
+        break;
+      case 76:
+        Serial1.println(pompaAS);
+        break;
+      case 77:
+        Serial1.println(erroreAS);
+        break;
+      case 78:
+        Serial1.println(pompaIP);
+        break;
+      case 79:
+        Serial1.println(MessageRC);
+        outputComplete = true;
+        break;
     }
+    delay(100);
   }
 }
