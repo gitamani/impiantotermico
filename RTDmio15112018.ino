@@ -1,5 +1,5 @@
 /*Creato da Giuseppe Tamanini
- * 06/12/2018
+ * 22/11/2018
  * Licenza CC BY-NC-SA 3.0 IT
 */
 
@@ -168,8 +168,7 @@ static unsigned long myTime9; // tempo di attesa della temperatura di ritorno S1
 static unsigned long myTime0; // tempo di attesa della temperatura di ritorno S7 dagli impianti a pavimento
 
 String inputString = ""; // Stringa in entrata sulla seriale
-bool outputComplete = false;  // la stringa è completata?
-int n = 0; // indica il numero della variabile inviata via seriale1
+boolean stringComplete; // la Stringa in arrivo salla Serial1 è comleta?
 
 void setup() {
   Serial.begin(115200);
@@ -896,9 +895,107 @@ void inviaDati() {
         break;
       case 79:
         Serial1.println(MessageRC);
-        outputComplete = true;
         break;
     }
     delay(100);
+  }
+}
+
+void Serial1Event() {
+  while (Serial1.available()) {
+    // get the new byte:
+    char inChar = (char)Serial1.read();
+    // add it to the inputString:
+    inputString += inChar;
+    // if the incoming character is a newline, set a flag so the main loop can
+    // do something about it:
+    if (inChar == '\n') {
+      inputString = inputString.substring(0, inputString.length() - 1);
+      stringComplete = true;
+    }
+  }
+}
+
+void caricaDati() {
+  Serial1Event();
+  if (inputString != "") {
+    Serial.print("inputString:");
+    Serial.println(inputString);
+    String sm = inputString.substring(0,2);
+    int m = sm.toInt();
+    Serial.print("n:");
+    Serial.println(m);
+    inputString = inputString.substring(2, inputString.length());
+    Serial.println(inputString);
+    switch (m + 1) {
+      case 1:
+        TempPav[0] = inputString.toInt();
+        break;
+      case 2:
+        TempPav[1] = inputString.toInt();
+        break;
+      case 3:
+        TempPav[2] = inputString.toInt();
+        break;
+      case 4:
+        TempPav[3] = inputString.toInt();
+        break;
+      case 5:
+        BMTempPav[0] = inputString.toInt();
+        break;
+      case 6:
+        BMTempPav[1] = inputString.toInt();
+        break;
+      case 7:
+        BMTempPav[2] = inputString.toInt();
+        break;
+      case 8:
+        BMTempPav[3] = inputString.toInt();
+        break;
+      case 9:
+        T_VZ = inputString.toInt() * 1000;
+        break;
+      case 10:
+        TT_VZ = inputString.toInt() * 1000;
+        break;
+      case 11:
+        T_att_ip = inputString.toInt() * 1000;
+        break;
+      case 12:
+        T_att_st  = inputString.toInt() * 1000;
+        break;
+      case 13:
+        T_V3vie = inputString.toInt() * 1000;
+        break;
+      case 14:
+        TT_V3vie = inputString.toInt() * 1000;
+        break;
+      case 15:
+        T_att_V3vie = inputString.toInt() * 1000;
+        break;
+      case 16:
+        BMTempV3vie = inputString.toInt();
+        break;
+      case 17:
+        TempASMax = inputString.toInt();
+        break;
+      case 18:
+        BMTempAS = inputString.toInt();
+        break;
+      case 19:
+        T_att_rc = inputString.toInt() * 1000;
+        break;
+      case 20:
+        T_att_as = inputString.toInt() * 1000;
+        break;
+      case 21:
+        T_att_ca = inputString.toInt() * 1000;
+        break;
+      case 22:
+        Tempriltemp = inputString.toInt() * 1000;
+        break;
+    }
+    inputString = "";
+    stringComplete = false;
   }
 }
