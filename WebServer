@@ -1,5 +1,6 @@
-/* Creato da Giuseppe Tamanini
- * 06/12/2018
+/* ESP8266 Webserver 'MIT License (MIT) Copyright (c) 2016 by David Bird'
+ * Creato da Giuseppe Tamanini
+ * 25/11/2018
  * Licenza CC BY-NC-SA 3.0 IT
 */
 
@@ -106,7 +107,7 @@ void setup() {
   // Next define what the server should do when a client connects
   server.on("/", HandleClient); // The client connected with no arguments e.g. http:192.160.0.40/
   server.on("/result", ShowClientResponse);
-  sender();
+  //sender();
 }
 
 void HandleClient() {
@@ -244,6 +245,7 @@ void HandleClient() {
   }
   creawebpage();
   server.send(200, "text/html", webpage); // Send a response to the client asking for input
+  inviaDati();
 }
 
 void ShowClientResponse() {
@@ -333,6 +335,7 @@ void creawebpage() {
      if (erroreVZc[3]) seczona4 = "Errore chiusura valvola "; else seczona4 = "";
      webpage += "Zona 4 (P.2): " + String(T[16 - 1]) + "&deg;C " + szona4 + sVZa4 + sVZc4 + paVZ[3] + "&#37; <font color='red'>" + seazona4 + seczona4 + "</font>- Zona 3 (P.1): " + String(T[15 - 1]) + "&deg;C " + szona3 + sVZa3 + sVZc3 + " " + paVZ[2] + "&#37; <font color='red'>" + seazona3 + seczona3 + "</font>- Zona 2 (P.T): " + String(T[14 - 1]) + "&deg;C " + szona2 + sVZa2 + sVZc2 + " " + paVZ[1] + "&#37; <font color='red'>" + seazona2 + seczona2 + "</font>- Zona 1 (P.int)1: " + String(T[13 - 1]) + "&deg;C " + szona1 + sVZa1 + sVZc1 + " " + paVZ[0] + "&#37; <font color='red'>" + seazona1 + seczona1 + "</font><br>";
      webpage += "<b>VALVOLA A 3 VIE:</b><br>";  
+     webpage += "Temperatura esterna: " + String(T[1 - 1]) + "&deg;C - Temperatura calcolata alimentazione impianto a pavimento: " + String(TempV3vie) + "&deg;C</br>";
      String sValvola3vie, sValvola3viea, sValvola3viec, serroreV3viea, serroreV3viec,serroreV3vie;
      if (Valvola3vie) sValvola3vie = "on  "; else sValvola3vie = "off ";
      if (Valvola3viea) sValvola3viea = "apre "; else sValvola3viea = "";
@@ -630,6 +633,84 @@ void caricaDati() {
     }
     inputString = "";
     stringComplete = false;
+  }
+}
+
+void inviaDati() {
+  for (int m = 0; m < 22; m++) {
+    Serial.println(m);
+    char buffer[2];
+    sprintf(buffer, "%02d", m);
+    mySerial.print(buffer);
+    switch (m + 1) {
+      case 1:
+        mySerial.println(tempPav[0]);
+        break;
+      case 2:
+        mySerial.println(tempPav[1]);
+        break;
+      case 3:
+        mySerial.println(tempPav[2]);
+        break;
+      case 4:
+        mySerial.println(tempPav[3]);
+        break;
+      case 5:
+        mySerial.println(BMTempPav[0]);
+        break;
+      case 6:
+        mySerial.println(BMTempPav[1]);
+        break;
+      case 7:
+        mySerial.println(BMTempPav[2]);
+        break;
+      case 8:
+        mySerial.println(BMTempPav[3]);
+        break;
+      case 9:
+        mySerial.println(T_VZ);
+        break;
+      case 10:
+        mySerial.println(TT_VZ);
+        break;
+      case 11:
+        mySerial.println(T_att_ip);
+        break;
+      case 12:
+        mySerial.println(T_att_st);
+        break;
+      case 13:
+        mySerial.println(T_V3vie);
+        break;
+      case 14:
+        mySerial.println(TT_V3vie);
+        break;
+      case 15:
+        mySerial.println(T_att_V3vie);
+        break;
+      case 16:
+        mySerial.println(BMTempV3vie);
+        break;
+      case 17:
+        mySerial.println(TempASMax);
+        break;
+      case 18:
+        mySerial.println(BMTempAS);
+        break;
+      case 19:
+        mySerial.println(T_att_as);
+        break;
+      case 20:
+        mySerial.println(T_att_rc);
+        break;
+      case 21:
+        mySerial.println(T_att_ca);
+        break;
+      case 22:
+        mySerial.println(Tempriltemp);
+        break;
+    }
+    delay(100);
   }
 }
 
