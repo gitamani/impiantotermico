@@ -1,6 +1,6 @@
 /* ESP8266 Webserver 'MIT License (MIT) Copyright (c) 2016 by David Bird'
  * Creato da Giuseppe Tamanini
- * 25/11/2018
+ * 10/12/2018
  * Licenza CC BY-NC-SA 3.0 IT
 */
 
@@ -42,6 +42,7 @@ int T_att_V3vie; // tempo in secondi di attesa prima della rilettura della tempe
 int BMTempV3vie; // tolleranza temperatura uscita valvola 3 vie
 int TempASMax; // temperatura massima acqua sanitaria
 int BMTempAS; // tolleranza temperatura acqua sanitaria
+int T_att_ir; // tempo in secondi di attesa prima della lettura della temperatura di uscita dall'impianto di riscaldamento
 int T_att_as; // tempo in secondi di attesa prima della lettura della temperatura di uscita S9 dello scambiatore acqua calda sanitaria
 int T_att_rc; // tempo in secondi di attesa prima della rilettura della temperatura della caldaia
 int T_att_ca; // tempo in secondi di attesa prima della lettura della temperatura di ritorno S12 dal puffer alla caldaia
@@ -71,6 +72,7 @@ boolean erroreAS; // errore pompa acqua calda sanitaria
 boolean pompaCA; // la pompa uscita caldaia è in funzione
 boolean erroreCA; // errore pompa comandata da R2 caldaia
 boolean pompaIP; // pompa uscita valvola 3 vie verso impianto pavimento è in funzione
+boolean erroreIP; // errore pompa comandata da R7 impianto riscaldamento
 boolean MessageRC; // errore richiamo calore
 
 String inputString = "";         // a String to hold incoming data
@@ -444,189 +446,201 @@ void caricaDati() {
         BMTempV3vie = inputString.toInt();
         break;
       case 18:
-        TempASMax = inputString.toInt();
+        T_att_ir = inputString.toInt();
         break;
       case 19:
-        BMTempAS = inputString.toInt();
+        TempASMax = inputString.toInt();
         break;
       case 20:
-        T_att_rc = inputString.toInt() / 1000;
+        BMTempAS = inputString.toInt();
         break;
       case 21:
-        T_att_as = inputString.toInt() / 1000;
+        T_att_rc = inputString.toInt() / 1000;
         break;
       case 22:
-        T_att_ca = inputString.toInt() / 1000;
+        T_att_as = inputString.toInt() / 1000;
         break;
       case 23:
-        Tempriltemp = inputString.toInt() / 1000;
+        T_att_ca = inputString.toInt() / 1000;
         break;
       case 24:
-        zona[0] = inputString.toInt();
+        Tempriltemp = inputString.toInt() / 1000;
         break;
       case 25:
-        zona[1] = inputString.toInt();
+        zona[0] = inputString.toInt();
         break;
       case 26:
-        zona[2] = inputString.toInt();
+        zona[1] = inputString.toInt();
         break;
       case 27:
-        zona[3] = inputString.toInt();
+        zona[2] = inputString.toInt();
         break;
       case 28:
-        T[0] = inputString.toInt();
+        zona[3] = inputString.toInt();
         break;
       case 29:
-        T[1] = inputString.toInt();
+        T[0] = inputString.toInt();
         break;
       case 30:
-        T[2] = inputString.toInt();
+        T[1] = inputString.toInt();
         break;
       case 31:
-        T[3] = inputString.toInt();
+        T[2] = inputString.toInt();
         break;
       case 32:
-        T[4] = inputString.toInt();
+        T[3] = inputString.toInt();
         break;
       case 33:
-        T[5] = inputString.toInt();
+        T[4] = inputString.toInt();
         break;
       case 34:
-        T[6] = inputString.toInt();
+        T[5] = inputString.toInt();
         break;
       case 35:
-        T[7] = inputString.toInt();
+        T[6] = inputString.toInt();
         break;
       case 36:
-        T[8] = inputString.toInt();
+        T[7] = inputString.toInt();
         break;
       case 37:
-        T[9] = inputString.toInt();
+        T[8] = inputString.toInt();
         break;
       case 38:
-        T[10] = inputString.toInt();
+        T[9] = inputString.toInt();
         break;
       case 39:
-        T[11] = inputString.toInt();
+        T[10] = inputString.toInt();
         break;
       case 40:
-        T[12] = inputString.toInt();
+        T[11] = inputString.toInt();
         break;
       case 41:
-        T[13] = inputString.toInt();
+        T[12] = inputString.toInt();
         break;
       case 42:
-        T[14] = inputString.toInt();
+        T[13] = inputString.toInt();
         break;
       case 43:
-        T[15] = inputString.toInt();
+        T[14] = inputString.toInt();
         break;
       case 44:
-        T[16] = inputString.toInt();
+        T[15] = inputString.toInt();
         break;
       case 45:
-        T[17] = inputString.toInt();
+        T[16] = inputString.toInt();
         break;
       case 46:
-        T[18] = inputString.toInt();
+        T[17] = inputString.toInt();
         break;
       case 47:
-        T[19] = inputString.toInt();
+        T[18] = inputString.toInt();
         break;
       case 48:
-        VZa[0] = inputString.toInt();
+        T[19] = inputString.toInt();
         break;
       case 49:
-        VZa[1] = inputString.toInt();
+        VZa[0] = inputString.toInt();
         break;
       case 50:
-        VZa[2] = inputString.toInt();
+        VZa[1] = inputString.toInt();
         break;
       case 51:
-        VZa[3] = inputString.toInt();
+        VZa[2] = inputString.toInt();
         break;
       case 52:
-        VZc[0] = inputString.toInt();
+        VZa[3] = inputString.toInt();
         break;
       case 53:
-        VZc[1] = inputString.toInt();
+        VZc[0] = inputString.toInt();
         break;
       case 54:
-        VZc[2] = inputString.toInt();
+        VZc[1] = inputString.toInt();
         break;
       case 55:
-        VZc[3] = inputString.toInt();
+        VZc[2] = inputString.toInt();
         break;
       case 56:
-        Catt_VZ[0] = inputString.toInt();
+        VZc[3] = inputString.toInt();
         break;
       case 57:
-        Catt_VZ[1] = inputString.toInt();
+        Catt_VZ[0] = inputString.toInt();
         break;
       case 58:
-        Catt_VZ[2] = inputString.toInt();
+        Catt_VZ[1] = inputString.toInt();
         break;
       case 59:
-        Catt_VZ[3] = inputString.toInt();
+        Catt_VZ[2] = inputString.toInt();
         break;
       case 60:
-        erroreVZa[0] = inputString.toInt();
+        Catt_VZ[3] = inputString.toInt();
         break;
       case 61:
-        erroreVZa[1] = inputString.toInt();
+        erroreVZa[0] = inputString.toInt();
         break;
       case 62:
-        erroreVZa[2] = inputString.toInt();
+        erroreVZa[1] = inputString.toInt();
         break;
       case 63:
-        erroreVZa[3] = inputString.toInt();
+        erroreVZa[2] = inputString.toInt();
         break;
       case 64:
-        erroreVZc[0] = inputString.toInt();
+        erroreVZa[3] = inputString.toInt();
         break;
       case 65:
-        erroreVZc[1] = inputString.toInt();
+        erroreVZc[0] = inputString.toInt();
         break;
       case 66:
-        erroreVZc[2] = inputString.toInt();
+        erroreVZc[1] = inputString.toInt();
         break;
       case 67:
-        erroreVZc[3] = inputString.toInt();
+        erroreVZc[2] = inputString.toInt();
         break;
       case 68:
-        pompaST = inputString.toInt();
+        erroreVZc[3] = inputString.toInt();
         break;
       case 69:
-        erroreST = inputString.toInt();
+        pompaST = inputString.toInt();
         break;
       case 70:
-        TempV3vie = inputString.toInt();
+        erroreST = inputString.toInt();
         break;
       case 71:
-        Valvola3viea = inputString.toInt();
+        TempV3vie = inputString.toInt();
         break;
       case 72:
-        Valvola3viec = inputString.toInt();
+        Valvola3viea = inputString.toInt();
         break;
       case 73:
-        Catt_V3vie = inputString.toInt();
+        Valvola3viec = inputString.toInt();
         break;
       case 74:
-        erroreV3viea = inputString.toInt();
+        Catt_V3vie = inputString.toInt();
         break;
       case 75:
-        erroreV3vie = inputString.toInt();
+        erroreV3viea = inputString.toInt();
         break;
       case 76:
-        pompaAS = inputString.toInt();
+        erroreV3vie = inputString.toInt();
         break;
       case 77:
-        erroreAS = inputString.toInt();
+        pompaAS = inputString.toInt();
         break;
       case 78:
-        pompaIP = inputString.toInt();
+        erroreAS = inputString.toInt();
         break;
       case 79:
+        pompaCA = inputString.toInt();
+        break;
+      case 80:
+        erroreCA = inputString.toInt();
+        break;
+      case 81:
+        pompaIP = inputString.toInt();
+        break;
+      case 82:
+        erroreIP = inputString.toInt();
+        break;
+      case 83:
         MessageRC = inputString.toInt();
         complete = true;
         break;
