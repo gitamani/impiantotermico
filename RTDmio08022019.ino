@@ -348,7 +348,7 @@ void loop() {
   valvola3vie();
   //acquasanitaria();
   //caldaia();
-  //createWebPage();
+  createWebPage();
   delay(250);
 }
 
@@ -576,7 +576,7 @@ void valvola3vie() {
       }
     }
   }
-  Serial.print("myTime0:");
+  /*Serial.print("myTime0:");
   Serial.println(millis() - myTime0);
   if ((Valvola3vieA || Valvola3vieC) && erroreIP == false && Sonda[7 - 1] < Sonda[6 - 1]*0.9 && millis() - myTime0 > T_att_ip) {
     // passato il tempo T_att_st se la temperatura di uscita valvola 3 vie è inferiore al 90% di quella di ritorno dell'impianto a pavimento
@@ -584,7 +584,7 @@ void valvola3vie() {
     erroreIP = true;
     Serial.println("R7spento");
     digitalWrite(relePin[7 - 1], HIGH);
-  }
+  }*/
 }
 
 void acquasanitaria() {
@@ -832,16 +832,16 @@ void createWebPage() {
           for (int i = 0; i < 4; i++) {
             paVZ[i] = Catt_VZ[i] / nc_VZ * 100; // calcola la percentuale di apertura delle valvole di zona
           }
-          paV3vie = Catt_V3vie / nc_V3vie * 100; // calcola la percentuale di apertura delle valvole di zona
+          paV3vie = (int)((float)Catt_V3vie / (float)nc_V3vie * 100); // calcola la percentuale di apertura/chiusura   delle valvole di zona
           client.println("Zona 4 (P.2): " + String(Sonda[16 - 1]) + "&deg;C " + szona4 + sVZa4 + sVZc4 + paVZ[3] + "&#37; <font color='red'>" + seazona4 + seczona4 + "</font>- Zona 3 (P.1): " + String(Sonda[15 - 1]) + "&deg;C " + szona3 + sVZa3 + sVZc3 + " " + paVZ[2] + "&#37; <font color='red'>" + seazona3 + seczona3 + "</font>- Zona 2 (P.T): " + String(Sonda[14 - 1]) + "&deg;C " + szona2 + sVZa2 + sVZc2 + " " + paVZ[1] + "&#37; <font color='red'>" + seazona2 + seczona2 + "</font>- Zona 1 (P.int)1: " + String(Sonda[13 - 1]) + "&deg;C " + szona1 + sVZa1 + sVZc1 + " " + paVZ[0] + "&#37; <font color='red'>" + seazona1 + seczona1 + "</font><br>");
           client.println("<b>VALVOLA A 3 VIE:</b><br>");  
           client.println("Temperatura esterna: " + String(Sonda[1 - 1]) + "&deg;C - Temperatura calcolata alimentazione impianto a pavimento: " + String(TempV3vie) + "&deg;C</br>");
           String sValvola3vie, sValvola3viea, sValvola3viec, serroreV3viea, serroreV3viec,serroreIP;
-          if (Valvola3vieA) sValvola3viea = "apre "; else sValvola3viea = "";
-          if (Valvola3vieC) sValvola3viec = "chiude "; else sValvola3viec= "";
+          if (Valvola3vieA || Valv3vieinattA) sValvola3viea = "apre "; else sValvola3viea = "";
+          if (Valvola3vieC || Valv3vieinattC) sValvola3viec = "chiude "; else sValvola3viec= "";
           if (erroreV3vieA) serroreV3viea = "Errore apertura valvola 3 vie"; else serroreV3viea = "";
           if (erroreV3vieC) serroreV3viec = "Errore chiusura valvola 3 vie"; else serroreV3viec = "";
-          if (erroreIP) serroreIP = "Errore malfunzionamento pompa uscita valvola a 3 vie"; else erroreIP = "";
+          if (erroreIP) serroreIP = "Errore malfunzionamento pompa uscita valvola a 3 vie"; else serroreIP = "";
           client.println(sValvola3vie + sValvola3viea + sValvola3viec + paV3vie + "&#37; <font color='red'>" + serroreV3viea + serroreV3viec + "</font> - Temperatura puffer alto: " + String(Sonda[4 - 1]) + "&deg;C - Temperatura uscita pompa: " + String(Sonda[6 - 1]) + "&deg;C - Temperatura ritorno da impianti a pavimento: " + String(Sonda[7 - 1]) + "&deg; <font color='red'>" + serroreIP +"</font><br>");
           client.println("<b>SOLARE TERMICO:</b><br>");  
           String spompaST, seST;
