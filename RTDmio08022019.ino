@@ -1,5 +1,5 @@
 /*Creato da Giuseppe Tamanini
- * 10/12/2018
+ * 09/02/2019
  * Licenza CC BY-NC-SA 3.0 IT
 */
 
@@ -119,7 +119,8 @@ boolean pompaST; // la pompa del solare termico è in funzione?
 boolean erroreST; // errore pompa comandata da R4 solare termico
 boolean Valvola3vieA; // la valvola a 3 vie è in fase di apertura?
 boolean Valvola3vieC; // la valvola a 3 vie è in fase di chiusura?
-boolean Valv3vieinatt; // è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
+boolean Valv3vieinattA; // in apertura è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
+boolean Valv3vieinattC; // in chiusura è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
 int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
 int paV3vie; // percentuale apertura della valvola 3 vie
 boolean V3vieoff; // la valvola 3 vie non è ferma
@@ -503,8 +504,8 @@ void valvola3vie() {
   Serial.print("T3vie:");
   Serial.println(TempV3vie);
   oled.setCursor(0, 2);
-  if (Valvola3vieA) oled.print("A ");
-  if (Valvola3vieC) oled.print("C ");
+  if (Valvola3vieA || Valv3vieinattA) oled.print("A ");
+  if (Valvola3vieC || Valv3vieinattC) oled.print("C ");
   oled.print((int)((float)Catt_V3vie / (float)nc_V3vie * 100));
   oled.print(" S4:");
   oled.print(Sonda[4 - 1]);
@@ -517,7 +518,7 @@ void valvola3vie() {
   if (Sonda[6 - 1] > Sonda[4 - 1]) MessageRC = true;
   if (erroreIP == false && erroreV3vieA == false && Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2) {
     // se la valvola 3 vie non è in errore e la temperatura S6 è minore della temperatura impostata meno banda morta
-    if (Valvola3vieA == false && Valv3vieinatt == false) {
+    if (Valvola3vieA == false && Valv3vieinattA == false) {
       myTime3 = millis();
       myTime0 = millis();
       Serial.println("V3vie apre");
@@ -525,29 +526,31 @@ void valvola3vie() {
       Valvola3vieA = true; // la valvola a 3 vie è in fase di apertura
       Catt_V3vie = Catt_V3vie + 1; // aumenta il numero dei cicli di apertura
       if (Catt_V3vie > nc_V3vie) {
-        erroreV3vieA = true; // se ha superato i cicli previsti attiva l'errore
+        erroreV3vieA = true; // se ha superato i cicli previsti attiva l'errore di apertura
+        digitalWrite(relePin[6 - 1], HIGH); // spegne il relè di apertura valvola 3 vie
         Serial.println("Errore di apertura valvola 3 vie");
       }   
-    } else if (Valv3vieinatt == false) {
+    } else if (Valv3vieinattA == false) {
       Serial.print("myTime3:");
       Serial.println(millis() - myTime3);
       if (millis() - myTime3 > T_V3vie) {
         Serial.println("V3vie spenta");
         digitalWrite(relePin[6 - 1], HIGH);
-        Valv3vieinatt = true;
+        Valv3vieinattA = true;
+        Valvola3vieA = false; // la valvola a 3 vie è ferma       
         myTime4 = millis();
       }
     } else {
       Serial.print("myTime4:");
       Serial.println(millis() - myTime4);
-      if (millis() - myTime4 > T_att_ip) {
-        Valv3vieinatt = false;
+      if (millis() - myTime4 > T_att_V3vie) {
+        Valv3vieinattA = false;
       }
     }
   }
-  if (V3vieoff == false && erroreIP == false && erroreV3vieC == false && Sonda[6 - 1] > TempV3vie + BMTempV3vie / 2) {
+  if (erroreIP == false && erroreV3vieC == false && Sonda[6 - 1] > TempV3vie + BMTempV3vie / 2) {
     // se la valvola 3 vie non è chiusa, in movimento, non è in errore e la temperatura S6 è maggiore della temperatura impostata più banda morta
-    if (Valvola3vieC == false && Valv3vieinatt == false) {
+    if (Valvola3vieC == false && Valv3vieinattC == false) {
       Serial.println("V3vie chiude");
       myTime3 = millis();
       digitalWrite(relePin[5 - 1], LOW);
@@ -555,26 +558,27 @@ void valvola3vie() {
       Catt_V3vie = Catt_V3vie + 1; // decrementa il numero dei cicli di apertura/chiusura
       if (Catt_V3vie > nc_V3vie) {
         erroreV3vieC = true; // se ha superato i cicli previsti attiva l'errore
+        digitalWrite(relePin[5 - 1], HIGH); // spegne il relè di chiusura valvola 3 vie
         Serial.println("Errore di chiusura valvola 3 vie");
       }   
-    } else if (Valv3vieinatt == false) {
+    } else if (Valv3vieinattC == false) {
       if (millis() - myTime4 > T_V3vie) {
         Serial.println("V3vie spenta");
         digitalWrite(relePin[5 - 1], HIGH);
-        Valv3vieinatt = true;
+        Valv3vieinattC = true;
         myTime4 = millis();
       }
     } else {
       Serial.print("myTime4:");
       Serial.println(millis() - myTime4);
       if (millis() - myTime4 > T_att_V3vie) {
-        Valv3vieinatt = false;
+        Valv3vieinattC = false;
       }
     }
   }
   Serial.print("myTime0:");
   Serial.println(millis() - myTime0);
-  if ((Valvola3vieA || Valvola3vieC) && erroreIP == false && Sonda[7 - 1] < Sonda[6 - 1]*0.9 && millis() - myTime0 > T_att_V3vie) {
+  if ((Valvola3vieA || Valvola3vieC) && erroreIP == false && Sonda[7 - 1] < Sonda[6 - 1]*0.9 && millis() - myTime0 > T_att_ip) {
     // passato il tempo T_att_st se la temperatura di uscita valvola 3 vie è inferiore al 90% di quella di ritorno dell'impianto a pavimento
     Serial.println("Errore malfunzionamento pompa uscita valvola a 3 vie");
     erroreIP = true;
