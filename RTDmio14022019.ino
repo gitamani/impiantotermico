@@ -1,5 +1,5 @@
 /*Creato da Giuseppe Tamanini
- * 09/02/2019
+ * 14/02/2019
  * Licenza CC BY-NC-SA 3.0 IT
 */
 
@@ -50,13 +50,13 @@ int inputPinC[4] = {2, 3, 5, 6}; // pin digitali in ingresso che leggono se le v
 // pin 3 chiusura valvola P.T
 // pin 4 chiusura valvola P.1
 // pin 5 chiusura valvola P.2
-int inputPinA[4] = {8, 9, 10, 11}; // pin digitali in ingresso che leggono se le valvole di zona sono aperte
+int inputPinA[4] = {8, 9, A9, A10}; // pin digitali in ingresso che leggono se le valvole di zona sono aperte
 // pin 6 apertura valvola P.int
 // pin 7 apertura valvola P.T
 // pin 8 apertura valvola P.1
 // pin 9 apertura valvola P.2
 int inputPinV3vieC = 7; // pin 10 chiusura valvola 3 vie
-int inputPinV3vieA = 12; // pin 11 apertura valvola 3 vie
+int inputPinV3vieA = A11; // pin 11 apertura valvola 3 vie
 boolean dataPinAB[2] [4] = {{1, 0, 0, 1}, {0, 1, 0, 1}}; // dati per la commutazione dei multiplexer
 // 10 seleziona l'ingresso 1 della scheda RTD
 // 01 seleziona l'ingresso 2 della scheda RTD
@@ -123,7 +123,8 @@ boolean Valv3vieinattA; // in apertura è in attesa della rilettura della temper
 boolean Valv3vieinattC; // in chiusura è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
 int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
 int paV3vie; // percentuale apertura della valvola 3 vie
-boolean V3vieoff; // la valvola 3 vie non è ferma
+boolean V3vieoff; // il finecorsa della valvola 3 vie in chiusura è on
+boolean V3vieon; // il finecorsa  della valvola 3 vie in apertura è on
 boolean erroreV3vieA; // errore di apertura valvola 3 vie
 boolean erroreV3vieC; // errore di chiusura valvola 3 vie
 boolean pompaAS; // la pompa dello scambiatore dell'acqua sanitaria è in funzione?
@@ -277,7 +278,7 @@ void setup() {
     Zona[i] = true;
     VZoff[i] = false;
   }
-  //chiude_V();
+  chiude_V();
   nc_VZ = TT_VZ / T_VZ; // calcola il numero dei cicli che servono per completare l'apertura/chiusura delle valvole di zona
   if (nc_VZ * 5000 < TT_VZ) nc_VZ = nc_VZ + 1; // se il risultato non è intero arrotonda il valore a quello successivo
   nc_V3vie = TT_V3vie / T_V3vie; // calcola il numero dei cicli che servono per completare l'apertura/chiusura della valvola 3 vie
@@ -516,24 +517,28 @@ void valvola3vie() {
   if (erroreIP) oled.print(" E");
   if (erroreIP == false) oled.print("  ");
   if (Sonda[6 - 1] > Sonda[4 - 1]) MessageRC = true;
-  if (erroreIP == false && erroreV3vieA == false && Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2) {
-    // se la valvola 3 vie non è in errore e la temperatura S6 è minore della temperatura impostata meno banda morta
+  Serial.println(Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2);
+  Serial.println(V3vieon);
+  Serial.println(V3vieon == false && erroreIP == false && erroreV3vieA == false && Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2);
+  if (V3vieon == false && erroreIP == false && erroreV3vieA == false && Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2) {
+    // se la valvola 3 vie non è aperta, non è in errore e la temperatura S6 è minore della temperatura impostata meno banda morta
     if (Valvola3vieA == false && Valv3vieinattA == false) {
       myTime3 = millis();
       myTime0 = millis();
       Serial.println("V3vie apre");
-      digitalWrite(relePin[6 - 1], LOW);
+      digitalWrite(relePin[6 - 1], LOW); // accende il relè di apertura della valvola 3 vie
       Valvola3vieA = true; // la valvola a 3 vie è in fase di apertura
       Catt_V3vie = Catt_V3vie + 1; // aumenta il numero dei cicli di apertura
-      if (Catt_V3vie > nc_V3vie) {
+      if (V3vieon == false && Catt_V3vie > nc_V3vie) {
         erroreV3vieA = true; // se ha superato i cicli previsti attiva l'errore di apertura
-        digitalWrite(relePin[6 - 1], HIGH); // spegne il relè di apertura valvola 3 vie
+        digitalWrite(relePin[6 - 1], HIGH); // spegne il relè di apertura della valvola 3 vie
         Serial.println("Errore di apertura valvola 3 vie");
-      }   
+      }
     } else if (Valv3vieinattA == false) {
       Serial.print("myTime3:");
       Serial.println(millis() - myTime3);
-      if (millis() - myTime3 > T_V3vie) {
+      V3vieon = digitalRead(inputPinV3vieA); // legge il pin digitale che rileva se la valvola di zona è aperta
+      if (V3vieon || millis() - myTime3 > T_V3vie) {
         Serial.println("V3vie spenta");
         digitalWrite(relePin[6 - 1], HIGH);
         Valv3vieinattA = true;
@@ -548,21 +553,22 @@ void valvola3vie() {
       }
     }
   }
-  if (erroreIP == false && erroreV3vieC == false && Sonda[6 - 1] > TempV3vie + BMTempV3vie / 2) {
+  if (V3vieoff == false && erroreIP == false && erroreV3vieC == false && Sonda[6 - 1] > TempV3vie + BMTempV3vie / 2) {
     // se la valvola 3 vie non è chiusa, in movimento, non è in errore e la temperatura S6 è maggiore della temperatura impostata più banda morta
     if (Valvola3vieC == false && Valv3vieinattC == false) {
       Serial.println("V3vie chiude");
       myTime3 = millis();
       digitalWrite(relePin[5 - 1], LOW);
       Valvola3vieC = true; // la valvola a 3 vie è in fase di chiusura
-      Catt_V3vie = Catt_V3vie + 1; // decrementa il numero dei cicli di apertura/chiusura
+      Catt_V3vie = Catt_V3vie - 1; // decrementa il numero dei cicli di apertura/chiusura
       if (Catt_V3vie > nc_V3vie) {
         erroreV3vieC = true; // se ha superato i cicli previsti attiva l'errore
         digitalWrite(relePin[5 - 1], HIGH); // spegne il relè di chiusura valvola 3 vie
         Serial.println("Errore di chiusura valvola 3 vie");
-      }   
+      }
     } else if (Valv3vieinattC == false) {
-      if (millis() - myTime4 > T_V3vie) {
+      V3vieoff = digitalRead(inputPinV3vieC); // legge il pin digitale che rileva se la valvola di zona è chiusa
+      if (V3vieoff || millis() - myTime4 > T_V3vie) {
         Serial.println("V3vie spenta");
         digitalWrite(relePin[5 - 1], HIGH);
         Valv3vieinattC = true;
@@ -576,7 +582,7 @@ void valvola3vie() {
       }
     }
   }
-  /*Serial.print("myTime0:");
+  Serial.print("myTime0:");
   Serial.println(millis() - myTime0);
   if ((Valvola3vieA || Valvola3vieC) && erroreIP == false && Sonda[7 - 1] < Sonda[6 - 1]*0.9 && millis() - myTime0 > T_att_ip) {
     // passato il tempo T_att_st se la temperatura di uscita valvola 3 vie è inferiore al 90% di quella di ritorno dell'impianto a pavimento
@@ -584,7 +590,7 @@ void valvola3vie() {
     erroreIP = true;
     Serial.println("R7spento");
     digitalWrite(relePin[7 - 1], HIGH);
-  }*/
+  }
 }
 
 void acquasanitaria() {
@@ -688,33 +694,34 @@ void chiude_V() {
   oled.print("Chiusura");
   oled.setCursor(27,3);
   oled.print("valvole di zona");
-
-  for (int i = 0; i < 4 ; i++) { // chiude le valvole di zona finché non sono rilevate tali 
-    digitalWrite(relePin[i + 9], LOW);
-  }
   TVZoff = false; // pone la variabile TVZoff a falso
   do {
-    for (int i = 0; i < 4; i++) { // controlla se le valvole di zona sono chiuse 
-      delay(500); // aspetta mezzo secondo
+    for (int i = 0; i < 4; i++) { // controlla se le valvole di zona sono chiuse
       VZoff[i] = digitalRead(inputPinC[i]); // legge il pin digitale che rileva se la valvola di zona è chiusa
-      if (VZoff[i] == false) break; // nel caso una qualsiasi non lo sia esce dal ciclo for
+      if (VZoff[i] == true) { // se la valvola di zona è chiusa
+        digitalWrite(relePin[i + 9], HIGH); // spegne il relè che chiude la valvole di zona
+      } else {
+        digitalWrite(relePin[i + 9], LOW);
+        delay(T_VZ); // aspetta il tempo di chiusura valvola di zona
+        break; // nel caso una qualsiasi non lo sia esce dal ciclo for
+      }
       TVZoff = true; // se tutte le valvole risultano chiuse pone TVZoff a vero
     }
   } while (TVZoff == false); // Se TVZoff è falso ripete il ciclo while
-  for (int i = 0; i < 4 ; i++) { // spegne i relè che chiudono le valvole di zona
-    digitalWrite(relePin[i + 9], HIGH);
-  }
   oled.clear();
   oled.setCursor(42,2);
   oled.print("Chiusura");
   oled.setCursor(30,3);
   oled.print("valvola 3 vie");
-  digitalWrite(relePin[5 - 1], LOW); // chiude la valvola 3 vie finché non è rilevata tale
   do {
-    delay(500); // aspetta mezzo secondo
     V3vieoff = digitalRead(inputPinV3vieC); // legge il pin digitale che rileva se la valvola di zona è chiusa
-  } while (V3vieoff == false); // Se TVZoff è falso ripete il ciclo while  
-  //oled.clear();
+    if (V3vieoff) { // se la valvola 3 vie è chiusa
+      digitalWrite(relePin[5 - 1], HIGH); // spegne il relè che chiude la valvola 3 vie
+    } else {
+      digitalWrite(relePin[5 - 1], LOW); // accende il relè che chiude la valvola 3 vie
+      delay(T_V3vie); // aspetta il tempo di chiusura valvola 3 vie
+    }
+  } while (V3vieoff == false); // Se TVZoff è falso ripete il ciclo while
   oled.setCursor(45,3);
   oled.print("Finito!");
   delay(2000);
