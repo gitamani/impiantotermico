@@ -1,5 +1,5 @@
 /*Creato da Giuseppe Tamanini
- * 14/02/2019
+ * 09/02/2019
  * Licenza CC BY-NC-SA 3.0 IT
 */
 
@@ -121,7 +121,7 @@ boolean Valvola3vieA; // la valvola a 3 vie è in fase di apertura?
 boolean Valvola3vieC; // la valvola a 3 vie è in fase di chiusura?
 boolean Valv3vieinattA; // in apertura è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
 boolean Valv3vieinattC; // in chiusura è in attesa della rilettura della temperatura di ritorno di una delle zone dell'impianto a pavimento
-int Catt_V3vie = 0; // ciclo attuale della valvola 3vie
+int Catt_V3vie = 10; // ciclo attuale della valvola 3vie
 int paV3vie; // percentuale apertura della valvola 3 vie
 boolean V3vieoff; // il finecorsa della valvola 3 vie in chiusura è on
 boolean V3vieon; // il finecorsa  della valvola 3 vie in apertura è on
@@ -189,6 +189,8 @@ File myFile; // file aperto in SD
 void setup() {
   Serial.begin(115200);
   analogReference(AR_DEFAULT);
+  delay(3000);
+  Serial.println("Connesso");
   
   Wire.begin();
   Wire.setClock(400000L);
@@ -200,14 +202,14 @@ void setup() {
   #endif // RST_PIN >= 0
   oled.setFont(Callibri10);
   oled.clear();
-
+  
   if (! rtc.begin()) {
-    Serial.println("Couldn't find RTC");
+    Serial.println("RTC non trovato");
     while (1);
   }
 
   if (! rtc.isrunning()) {
-    Serial.println("RTC is NOT running!");
+    Serial.println("RTC non è avviato");
     // following line sets the RTC to the date & time this sketch was compiled
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     // This line sets the RTC with an explicit date & time, for example to set
@@ -517,9 +519,8 @@ void valvola3vie() {
   if (erroreIP) oled.print(" E");
   if (erroreIP == false) oled.print("  ");
   if (Sonda[6 - 1] > Sonda[4 - 1]) MessageRC = true;
-  Serial.println(Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2);
-  Serial.println(V3vieon);
-  Serial.println(V3vieon == false && erroreIP == false && erroreV3vieA == false && Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2);
+  V3vieon = digitalRead(inputPinV3vieA); // legge il pin digitale che rileva se la valvola di zona è aperta
+  V3vieoff = digitalRead(inputPinV3vieC); // legge il pin digitale che rileva se la valvola di zona è chiusa
   if (V3vieon == false && erroreIP == false && erroreV3vieA == false && Sonda[6 - 1] <  TempV3vie - BMTempV3vie / 2) {
     // se la valvola 3 vie non è aperta, non è in errore e la temperatura S6 è minore della temperatura impostata meno banda morta
     if (Valvola3vieA == false && Valv3vieinattA == false) {
@@ -535,9 +536,6 @@ void valvola3vie() {
         Serial.println("Errore di apertura valvola 3 vie");
       }
     } else if (Valv3vieinattA == false) {
-      Serial.print("myTime3:");
-      Serial.println(millis() - myTime3);
-      V3vieon = digitalRead(inputPinV3vieA); // legge il pin digitale che rileva se la valvola di zona è aperta
       if (V3vieon || millis() - myTime3 > T_V3vie) {
         Serial.println("V3vie spenta");
         digitalWrite(relePin[6 - 1], HIGH);
@@ -546,8 +544,6 @@ void valvola3vie() {
         myTime4 = millis();
       }
     } else {
-      Serial.print("myTime4:");
-      Serial.println(millis() - myTime4);
       if (millis() - myTime4 > T_att_V3vie) {
         Valv3vieinattA = false;
       }
@@ -558,32 +554,29 @@ void valvola3vie() {
     if (Valvola3vieC == false && Valv3vieinattC == false) {
       Serial.println("V3vie chiude");
       myTime3 = millis();
+      myTime0 = millis();
       digitalWrite(relePin[5 - 1], LOW);
       Valvola3vieC = true; // la valvola a 3 vie è in fase di chiusura
       Catt_V3vie = Catt_V3vie - 1; // decrementa il numero dei cicli di apertura/chiusura
-      if (Catt_V3vie > nc_V3vie) {
+      if (V3vieoff == false && Catt_V3vie <= 0) {
         erroreV3vieC = true; // se ha superato i cicli previsti attiva l'errore
         digitalWrite(relePin[5 - 1], HIGH); // spegne il relè di chiusura valvola 3 vie
         Serial.println("Errore di chiusura valvola 3 vie");
       }
     } else if (Valv3vieinattC == false) {
-      V3vieoff = digitalRead(inputPinV3vieC); // legge il pin digitale che rileva se la valvola di zona è chiusa
-      if (V3vieoff || millis() - myTime4 > T_V3vie) {
+      if (V3vieoff || millis() - myTime3 > T_V3vie) {
         Serial.println("V3vie spenta");
         digitalWrite(relePin[5 - 1], HIGH);
         Valv3vieinattC = true;
+        Valvola3vieC = false; // la valvola a 3 vie è ferma       
         myTime4 = millis();
       }
     } else {
-      Serial.print("myTime4:");
-      Serial.println(millis() - myTime4);
       if (millis() - myTime4 > T_att_V3vie) {
         Valv3vieinattC = false;
       }
     }
   }
-  Serial.print("myTime0:");
-  Serial.println(millis() - myTime0);
   if ((Valvola3vieA || Valvola3vieC) && erroreIP == false && Sonda[7 - 1] < Sonda[6 - 1]*0.9 && millis() - myTime0 > T_att_ip) {
     // passato il tempo T_att_st se la temperatura di uscita valvola 3 vie è inferiore al 90% di quella di ritorno dell'impianto a pavimento
     Serial.println("Errore malfunzionamento pompa uscita valvola a 3 vie");
